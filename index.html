@@ -166,6 +166,11 @@
     <div class="card-title">Square connection <span class="badge bwarn">stored only in your browser</span></div>
     <div id="api-status"></div>
     <div class="fg" style="margin-bottom:12px">
+      <label>Cloudflare Worker URL <span class="badge binfo">your proxy</span></label>
+      <input type="text" id="proxy-url" placeholder="https://bakery-proxy.yourname.workers.dev" oninput="save('proxy_url',this.value)"/>
+      <span style="font-size:11px;color:var(--text2);margin-top:3px">See setup instructions below for how to get this URL.</span>
+    </div>
+    <div class="fg" style="margin-bottom:12px">
       <label>Production access token</label>
       <input type="password" id="sq-token" placeholder="EAAAl..." oninput="save('sq_token',this.value)"/>
     </div>
@@ -181,7 +186,15 @@
   </div>
 
   <div class="card">
-    <div class="card-title">How to get your Square credentials</div>
+    <div class="card-title">Step A &mdash; Set up your Cloudflare proxy (one time only)</div>
+    <div class="hint">Square's API blocks direct browser requests for security. A free Cloudflare Worker acts as a middleman. This takes about 5 minutes and you never need to touch it again.</div>
+    <div class="step"><div class="stepn">1</div><p>Go to <a href="https://workers.cloudflare.com" target="_blank">workers.cloudflare.com</a> and create a free account (or sign in).</p></div>
+    <div class="step"><div class="stepn">2</div><p>Click <strong>Create application</strong> &rarr; <strong>Create Worker</strong>. Give it any name like <code>bakery-proxy</code>. Click <strong>Deploy</strong>.</p></div>
+    <div class="step"><div class="stepn">3</div><p>Click <strong>Edit code</strong>. Select all the default code and delete it. Paste in the contents of the <code>cloudflare-worker.js</code> file you downloaded. Click <strong>Deploy</strong>.</p></div>
+    <div class="step"><div class="stepn">4</div><p>Copy the Worker URL shown at the top (looks like <code>https://bakery-proxy.yourname.workers.dev</code>). Paste it into the <strong>Cloudflare Worker URL</strong> field above.</p></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Step B &mdash; Get your Square credentials</div>
     <div class="step"><div class="stepn">1</div><p>Go to <a href="https://developer.squareup.com" target="_blank">developer.squareup.com</a> and sign in with your Square account.</p></div>
     <div class="step"><div class="stepn">2</div><p>Click <strong>+</strong> to create a new application &mdash; name it &ldquo;Bakery Planner&rdquo;. Click <strong>Save</strong>.</p></div>
     <div class="step"><div class="stepn">3</div><p>Open your app &rarr; click the <strong>Production</strong> tab &rarr; copy the <strong>Production Access Token</strong> and paste it above.</p></div>
@@ -307,6 +320,11 @@ const LOCS = ['Red','Bel','Wood'];
 const LOC_LABEL = {Red:'Redmond', Bel:'Bellevue', Wood:'Woodinville'};
 const SQ_VER = '2024-01-17';
 
+  // Your Cloudflare Worker URL — set this after deploying the worker
+  function proxyBase() {
+    return (load('proxy_url') || '').replace(/\/$/, '');
+  }
+
 let catalog = [];
 let prodItems = [];
 let rels = [];
@@ -321,6 +339,11 @@ function loadJ(k, def) { try { const r = localStorage.getItem('bpp_'+k); return 
 
 function token() { return document.getElementById('sq-token').value.trim(); }
 function sqH() { return {'Authorization':'Bearer '+token(),'Content-Type':'application/json','Square-Version':SQ_VER}; }
+  function sqUrl(path) {
+    const base = proxyBase();
+    if(!base) { alert('Add your Cloudflare Worker URL in the Setup tab.'); throw new Error('No proxy URL set'); }
+    return base + '/proxy' + path;
+  }
 
 function showTab(name, el) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -341,6 +364,7 @@ function setStatus(id, msg, type) {
 
 function loadAll() {
   document.getElementById('sq-token').value = load('sq_token');
+  document.getElementById('proxy-url').value = load('proxy_url');
   document.getElementById('loc-red').value = load('loc_red');
   document.getElementById('loc-bel').value = load('loc_bel');
   document.getElementById('loc-wood').value = load('loc_wood');
@@ -375,7 +399,8 @@ function exportSettings() {
     prodItems: prodItems,
     rels: rels,
     oosData: oosData,
-    kitchenBuffer: load('kitchen_buffer','5')
+    kitchenBuffer: load('kitchen_buffer','5'),
+    proxyUrl: load('proxy_url')
   };
   const blob = new Blob([JSON.stringify(cfg, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -397,6 +422,7 @@ function importSettings(input) {
       if(cfg.rels) { rels = cfg.rels; saveJ('rels', rels); }
       if(cfg.oosData) { oosData = cfg.oosData; saveJ('oos_data', oosData); }
       if(cfg.kitchenBuffer) { save('kitchen_buffer', cfg.kitchenBuffer); document.getElementById('kitchen-buffer').value = cfg.kitchenBuffer; }
+      if(cfg.proxyUrl) { save('proxy_url', cfg.proxyUrl); document.getElementById('proxy-url').value = cfg.proxyUrl; }
       renderProdItems(); renderRels(); renderCatalogGrid(); renderOosDays(); renderOosLocs(); renderOosList(); updateRelProdSelect();
       if(catalog.length) document.getElementById('catalog-count').textContent = catalog.length + ' items loaded';
       alert('Settings imported successfully! Add your Square token in the Setup tab to connect.');
@@ -413,7 +439,7 @@ async function testConn() {
   if(!token()) { setStatus('api-status','Enter your access token first.','err'); return; }
   setStatus('api-status','<span class="spin"></span> Connecting to Square…','info');
   try {
-    const r = await fetch('https://connect.squareup.com/v2/locations', {headers: sqH()});
+    const r = await fetch(sqUrl('/v2/locations'), {headers: sqH()});
     const d = await r.json();
     if(d.locations) {
       const names = d.locations.map(l => `${l.name} (${l.id})`).join(' &bull; ');
@@ -431,7 +457,7 @@ async function syncCatalog() {
   try {
     let items = [], cursor = null;
     do {
-      const url = 'https://connect.squareup.com/v2/catalog/list?types=ITEM' + (cursor ? '&cursor='+cursor : '');
+      const url = sqUrl('/v2/catalog/list?types=ITEM') + (cursor ? '&cursor='+cursor : '');
       const r = await fetch(url, {headers: sqH()});
       const d = await r.json();
       if(d.errors) { setStatus('catalog-status','Error: '+d.errors[0].detail,'err'); return; }
@@ -626,7 +652,7 @@ async function fetchOrders(locId, startISO, endISO) {
       }
     };
     if(cursor) body.cursor = cursor;
-    const r = await fetch('https://connect.squareup.com/v2/orders/search', {
+    const r = await fetch(sqUrl('/v2/orders/search'), {
       method:'POST', headers: sqH(), body: JSON.stringify(body)
     });
     const d = await r.json();
@@ -802,3 +828,4 @@ loadAll();
 </script>
 </body>
 </html>
+
