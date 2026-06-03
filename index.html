@@ -669,14 +669,49 @@ function aggregateOrders(orders) {
     if(!o.line_items) continue;
     const hr = new Date(o.created_at).getHours();
     for(const li of o.line_items) {
-      const name = li.name || '?';
+      // Build a combined name from item name + variation name (e.g. "Avocado Toast Tartine — Fries")
+      const baseName = li.name || '?';
+      const varName = li.variation_name || '';
+      const fullName = varName && varName.toLowerCase() !== 'regular' ? `${baseName} — ${varName}` : baseName;
       const qty = parseInt(li.quantity) || 1;
-      counts[name] = (counts[name]||0) + qty;
-      if(!hourly[name]) hourly[name] = {};
-      hourly[name][hr] = (hourly[name][hr]||0) + qty;
+      // Store both the full name and base name so matching works either way
+      counts[fullName] = (counts[fullName]||0) + qty;
+      if(fullName !== baseName) counts[baseName] = (counts[baseName]||0) + qty;
+      if(!hourly[fullName]) hourly[fullName] = {};
+      hourly[fullName][hr] = (hourly[fullName][hr]||0) + qty;
+      if(fullName !== baseName) {
+        if(!hourly[baseName]) hourly[baseName] = {};
+        hourly[baseName][hr] = (hourly[baseName][hr]||0) + qty;
+      }
     }
   }
   return {counts, hourly};
+}
+
+// Fuzzy lookup: finds sales for a menu item name using flexible matching
+// Tries exact match first, then checks if any Square key contains the rel name or vice versa
+function lookupSales(sales, menuName) {
+  if(sales[menuName]) return sales[menuName];
+  const lower = menuName.toLowerCase();
+  let total = 0;
+  for(const [key, qty] of Object.entries(sales)) {
+    const kl = key.toLowerCase();
+    if(kl.includes(lower) || lower.includes(kl)) total += qty;
+  }
+  return total;
+}
+
+function lookupHourly(hourly, menuName) {
+  if(hourly[menuName]) return hourly[menuName];
+  const lower = menuName.toLowerCase();
+  const merged = {};
+  for(const [key, hrs] of Object.entries(hourly)) {
+    const kl = key.toLowerCase();
+    if(kl.includes(lower) || lower.includes(kl)) {
+      for(const [h, q] of Object.entries(hrs)) merged[h] = (merged[h]||0) + q;
+    }
+  }
+  return Object.keys(merged).length ? merged : null;
 }
 
 function calcOosAddition(hourlyData, soldOutTime, openTime, closeTime) {
@@ -753,23 +788,22 @@ async function generate() {
           const myRels = rels.filter(r => r.prod === pi.name);
 
           for(const rel of myRels) {
-            const sold = sales[rel.menu] || 0;
+            const sold = lookupSales(sales, rel.menu);
             qty += sold * rel.qty;
             const oosKey = day+'|'+loc;
             const oosEntry = (oosData[oosKey]||[]).find(o => o.name === pi.name);
             if(oosEntry) {
-              const addl = calcOosAddition(hourly[rel.menu], oosEntry.time, openTime, closeTime);
+              const addl = calcOosAddition(lookupHourly(hourly, rel.menu), oosEntry.time, openTime, closeTime);
               qty += addl * rel.qty;
             }
           }
 
           // If no relationships defined, fall back to direct sales of this item by name
           if(myRels.length === 0) {
-            const directSold = sales[pi.name] || 0;
-            qty = directSold;
+            qty = lookupSales(sales, pi.name);
             const oosKey = day+'|'+loc;
             const oosEntry = (oosData[oosKey]||[]).find(o => o.name === pi.name);
-            if(oosEntry) qty += calcOosAddition(hourly[pi.name], oosEntry.time, openTime, closeTime);
+            if(oosEntry) qty += calcOosAddition(lookupHourly(hourly, pi.name), oosEntry.time, openTime, closeTime);
           }
 
           if(pi.sec === 'kitchen') qty = qty * kitchenBuffer;
@@ -828,4 +862,3 @@ loadAll();
 </script>
 </body>
 </html>
-
