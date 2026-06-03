@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Bakery Production Planner</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg2: #f7f6f3;
+    --bg3: #f0efe9;
+    --text: #1a1a1a;
+    --text2: #6b6b6b;
+    --text3: #9b9b9b;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.22);
+    --info-bg: #e6f1fb;
+    --info-text: #0c447c;
+    --ok-bg: #eaf3de;
+    --ok-text: #27500a;
+    --err-bg: #fcebeb;
+    --err-text: #791f1f;
+    --warn-bg: #faeeda;
+    --warn-text: #633806;
+    --purp-bg: #eeedfe;
+    --purp-text: #3c3489;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e;
+      --bg2: #272727;
+      --bg3: #2e2e2e;
+      --text: #f0f0f0;
+      --text2: #aaaaaa;
+      --text3: #717171;
+      --border: rgba(255,255,255,0.12);
+      --border2: rgba(255,255,255,0.22);
+      --info-bg: #0c2a48;
+      --info-text: #85b7eb;
+      --ok-bg: #17340a;
+      --ok-text: #97c459;
+      --err-bg: #3a1010;
+      --err-text: #f09595;
+      --warn-bg: #3a2404;
+      --warn-text: #fac775;
+      --purp-bg: #1e1b4a;
+      --purp-text: #afa9ec;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg3); color: var(--text); font-size: 14px; line-height: 1.5; }
+  .shell { max-width: 860px; margin: 0 auto; padding: 0; }
+  header { background: var(--bg); border-bottom: 0.5px solid var(--border); padding: 16px 24px; position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  header h1 { font-size: 17px; font-weight: 600; color: var(--text); }
+  header p { font-size: 12px; color: var(--text2); margin-top: 1px; }
+  .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .tabs { background: var(--bg); border-bottom: 0.5px solid var(--border); padding: 0 24px; display: flex; gap: 2px; }
+  .tab { font-size: 13px; padding: 10px 14px; border: none; background: none; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 4px 4px 0 0; }
+  .tab:hover:not(.active) { background: var(--bg2); color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+  .content { padding: 24px; }
+  .panel { display: none; } .panel.active { display: block; }
+  .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px; }
+  .card-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: var(--text2); line-height: 1.7; margin-bottom: 14px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .fg { display: flex; flex-direction: column; gap: 4px; }
+  .fg label { font-size: 11px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.4px; }
+  .fg input, .fg select, input[type=text], input[type=number], input[type=password], input[type=date], input[type=time], select {
+    background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius);
+    padding: 7px 10px; font-size: 13px; color: var(--text); width: 100%;
+  }
+  .fg input:focus, .fg select:focus, input:focus, select:focus { outline: 2px solid var(--info-text); outline-offset: 1px; }
+  input[type=password] { font-family: monospace; letter-spacing: 2px; }
+  input[type=range] { width: 100%; accent-color: var(--text); }
+  .btn { padding: 8px 14px; font-size: 13px; border-radius: var(--radius); cursor: pointer; border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); font-weight: 500; white-space: nowrap; }
+  .btn:hover { background: var(--bg2); }
+  .btn:active { transform: scale(0.98); }
+  .btnp { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btnp:hover { opacity: 0.85; }
+  .btnsm { padding: 4px 9px; font-size: 12px; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+  .bwarn { background: var(--warn-bg); color: var(--warn-text); }
+  .bok { background: var(--ok-bg); color: var(--ok-text); }
+  .binfo { background: var(--info-bg); color: var(--info-text); }
+  .bpurp { background: var(--purp-bg); color: var(--purp-text); }
+  .status { font-size: 13px; padding: 10px 14px; border-radius: var(--radius); margin-bottom: 14px; line-height: 1.5; }
+  .sinfo { background: var(--info-bg); color: var(--info-text); }
+  .serr { background: var(--err-bg); color: var(--err-text); }
+  .sok { background: var(--ok-bg); color: var(--ok-text); }
+  .step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .stepn { width: 24px; height: 24px; border-radius: 50%; background: var(--bg2); border: 0.5px solid var(--border2); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; margin-top: 1px; }
+  .step p { font-size: 13px; color: var(--text); line-height: 1.7; }
+  .step code { font-family: monospace; font-size: 12px; background: var(--bg2); padding: 1px 6px; border-radius: 4px; border: 0.5px solid var(--border); }
+  .step a { color: var(--info-text); }
+  .tbl { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .tbl th { font-size: 11px; font-weight: 600; color: var(--text2); text-align: left; padding: 7px 10px; border-bottom: 0.5px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.3px; }
+  .tbl td { padding: 7px 10px; border-bottom: 0.5px solid var(--border); color: var(--text); vertical-align: middle; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tbody tr:hover td { background: var(--bg2); }
+  .cat-header td { font-size: 11px; font-weight: 600; color: var(--text2); background: var(--bg2); text-transform: uppercase; letter-spacing: 0.4px; padding: 5px 10px; }
+  .add-row { display: flex; gap: 8px; margin-top: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .add-row .fg { flex: 1; min-width: 110px; }
+  .add-row .fg-sm { flex: 0 0 75px; }
+  .day-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .dtab { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 0.5px solid var(--border2); background: var(--bg); cursor: pointer; color: var(--text2); font-weight: 500; }
+  .dtab.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .loc-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .ltab { font-size: 12px; padding: 4px 11px; border-radius: 20px; border: 0.5px solid var(--border); background: var(--bg); cursor: pointer; color: var(--text2); }
+  .ltab.active { background: var(--info-bg); color: var(--info-text); border-color: var(--info-text); }
+  .ctrl-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .pctctl { display: flex; align-items: center; gap: 10px; }
+  .pctctl label { font-size: 13px; color: var(--text2); white-space: nowrap; }
+  .pctval { font-size: 15px; font-weight: 600; min-width: 44px; color: var(--text); }
+  .output { background: var(--bg2); border-radius: var(--radius); padding: 14px; font-family: monospace; font-size: 11px; line-height: 2; color: var(--text); white-space: pre; overflow-x: auto; max-height: 420px; overflow-y: auto; border: 0.5px solid var(--border); }
+  .sec-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text3); margin: 16px 0 8px; }
+  .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 5px; max-height: 240px; overflow-y: auto; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg2); }
+  .cat-item { font-size: 12px; padding: 5px 9px; border-radius: var(--radius); border: 0.5px solid var(--border); cursor: default; color: var(--text2); background: var(--bg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { text-align: center; padding: 20px; color: var(--text2); font-size: 13px; }
+  .suggest-box { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius); position: absolute; z-index: 50; width: 100%; max-height: 180px; overflow-y: auto; top: 2px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+  .suggest-item { padding: 7px 12px; font-size: 12px; cursor: pointer; color: var(--text); }
+  .suggest-item:hover { background: var(--bg2); }
+  .info-box { background: var(--bg2); border-radius: var(--radius); padding: 14px 16px; font-size: 13px; color: var(--text2); line-height: 1.7; border: 0.5px solid var(--border); }
+  .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border2); border-top-color: var(--text); border-radius: 50%; animation: sp 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  @media (max-width: 600px) {
+    .row2, .row3 { grid-template-columns: 1fr; }
+    header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .header-actions { width: 100%; }
+    .tabs { overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<header>
+  <div>
+    <h1>Bakery Production Planner</h1>
+    <p>Square → ingredient logic → weekly bake numbers → paste to Excel</p>
+  </div>
+  <div class="header-actions">
+    <button class="btn btnsm" onclick="exportSettings()" title="Export your settings to share with teammates">&#8595; Export settings</button>
+    <button class="btn btnsm" onclick="document.getElementById('import-file').click()" title="Import settings from a teammate">&#8593; Import settings</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importSettings(this)"/>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('setup',this)">1. Setup</button>
+  <button class="tab" onclick="showTab('catalog',this)">2. Catalog</button>
+  <button class="tab" onclick="showTab('recipes',this)">3. Relationships</button>
+  <button class="tab" onclick="showTab('oos',this)">4. Out of stock</button>
+  <button class="tab" onclick="showTab('generate',this)">5. Generate</button>
+</div>
+
+<div class="content">
+
+<!-- SETUP -->
+<div id="tab-setup" class="panel active">
+  <div class="card">
+    <div class="card-title">Square connection <span class="badge bwarn">stored only in your browser</span></div>
+    <div id="api-status"></div>
+    <div class="fg" style="margin-bottom:12px">
+      <label>Production access token</label>
+      <input type="password" id="sq-token" placeholder="EAAAl..." oninput="save('sq_token',this.value)"/>
+    </div>
+    <div class="row3">
+      <div class="fg"><label>Redmond location ID</label><input type="text" id="loc-red" placeholder="LXXXXXXXX" oninput="save('loc_red',this.value)"/></div>
+      <div class="fg"><label>Bellevue location ID</label><input type="text" id="loc-bel" placeholder="LXXXXXXXX" oninput="save('loc_bel',this.value)"/></div>
+      <div class="fg"><label>Woodinville location ID</label><input type="text" id="loc-wood" placeholder="LXXXXXXXX" oninput="save('loc_wood',this.value)"/></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btnp" onclick="testConn()">Test connection</button>
+      <button class="btn" onclick="goTab('catalog')">Next: sync catalog &rarr;</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">How to get your Square credentials</div>
+    <div class="step"><div class="stepn">1</div><p>Go to <a href="https://developer.squareup.com" target="_blank">developer.squareup.com</a> and sign in with your Square account.</p></div>
+    <div class="step"><div class="stepn">2</div><p>Click <strong>+</strong> to create a new application &mdash; name it &ldquo;Bakery Planner&rdquo;. Click <strong>Save</strong>.</p></div>
+    <div class="step"><div class="stepn">3</div><p>Open your app &rarr; click the <strong>Production</strong> tab &rarr; copy the <strong>Production Access Token</strong> and paste it above.</p></div>
+    <div class="step"><div class="stepn">4</div><p>For location IDs: in your <a href="https://squareup.com/dashboard" target="_blank">Square Dashboard</a>, go to <strong>Account &amp; Settings &rarr; Locations</strong>. Each location shows an ID starting with <code>L</code>.</p></div>
+    <div class="step"><div class="stepn">5</div><p>Hit <strong>Test connection</strong> &mdash; if it works, move to the <strong>Catalog</strong> tab to sync your menu items.</p></div>
+    <div class="step"><div class="stepn">6</div><p>To share with teammates: once you&rsquo;ve set up your relationships, use <strong>Export settings</strong> (top right) to save a config file. Teammates open this file and hit <strong>Import settings</strong> &mdash; they only need to add their own Square token.</p></div>
+  </div>
+</div>
+
+<!-- CATALOG -->
+<div id="tab-catalog" class="panel">
+  <div class="card">
+    <div class="card-title">Square catalog sync</div>
+    <div class="hint">Pull your live menu items from Square so you can use real item names when building ingredient relationships. Re-sync any time your menu changes.</div>
+    <div id="catalog-status"></div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <button class="btn btnp" onclick="syncCatalog()">Sync from Square</button>
+      <span id="catalog-count" style="font-size:13px;color:var(--text2)"></span>
+    </div>
+    <div id="catalog-grid" style="display:none" class="catalog-grid"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Production items <span class="badge bpurp">what your kitchen actually bakes</span></div>
+    <div class="hint">Add every item your bakery produces &mdash; baguettes, croissants, loaves, etc. Mark each as Retail (sold direct) or Kitchen (ingredient-only, gets the buffer). Menu items in the Relationships tab will draw from these.</div>
+    <div id="prod-items-list"></div>
+    <div class="add-row">
+      <div class="fg"><label>Production item name</label><input type="text" id="new-prod" placeholder="e.g. Baguette" onkeydown="if(event.key==='Enter')addProdItem()"/></div>
+      <div class="fg" style="max-width:130px"><label>Section</label>
+        <select id="new-prod-sec">
+          <option value="retail">Retail</option>
+          <option value="kitchen">Kitchen</option>
+        </select>
+      </div>
+      <button class="btn btnp" style="align-self:flex-end" onclick="addProdItem()">+ Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- RELATIONSHIPS -->
+<div id="tab-recipes" class="panel">
+  <div class="card">
+    <div class="card-title">Ingredient relationships</div>
+    <div class="hint">For each menu item that uses a production item, enter how much it uses. Example: &ldquo;Jambon Beurre&rdquo; uses 0.5 of &ldquo;Baguette&rdquo;. The tool sums all relevant menu sales and converts to total production units needed.</div>
+    <div id="rel-list"></div>
+    <div class="sec-label">Add relationship</div>
+    <div class="add-row">
+      <div class="fg" style="position:relative">
+        <label>Menu item (from Square catalog)</label>
+        <input type="text" id="rel-menu" placeholder="Start typing to search..." oninput="filterSuggestions(this.value)" autocomplete="off" onblur="setTimeout(()=>hideSuggestions(),150)"/>
+        <div id="rel-suggestions" style="display:none;position:absolute;width:100%;top:100%;left:0;z-index:50"></div>
+      </div>
+      <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px;white-space:nowrap">uses</div>
+      <div class="fg fg-sm"><label>Qty</label><input type="number" id="rel-qty" placeholder="0.5" step="0.01" min="0.01" style="width:75px"/></div>
+      <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px">of</div>
+      <div class="fg"><label>Production item</label>
+        <select id="rel-prod"><option value="">&#8212; select &#8212;</option></select>
+      </div>
+      <button class="btn btnp" style="align-self:flex-end" onclick="addRel()">+ Add</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Kitchen buffer</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--text2)">Kitchen items automatically get a</span>
+      <input type="number" id="kitchen-buffer" value="5" min="0" max="50" style="width:65px;font-size:13px" oninput="save('kitchen_buffer',this.value)"/>
+      <span style="font-size:13px;color:var(--text2)">% buffer added on top of calculated need.</span>
+    </div>
+  </div>
+</div>
+
+<!-- OOS -->
+<div id="tab-oos" class="panel">
+  <div class="card">
+    <div class="card-title">Out-of-stock events</div>
+    <div class="hint">If an item sold out mid-day last week, log it here by day and location. The tool fetches that item&rsquo;s actual hourly sales curve from Square for that day and uses it to estimate missed sales &mdash; so if baguettes sell mostly in the morning, it won&rsquo;t over-credit afternoon hours.</div>
+    <div class="day-tabs" id="oos-days"></div>
+    <div class="loc-tabs" id="oos-locs"></div>
+    <div id="oos-list"></div>
+    <button class="btn" style="margin-top:12px" onclick="addOosEntry()">+ Add item</button>
+  </div>
+  <div class="info-box" style="margin-top:0">
+    <strong style="color:var(--text)">How the hourly curve works:</strong> The tool looks at that specific item&rsquo;s actual sales by hour from Square data. It calculates what fraction of the day&rsquo;s sales typically happen during the hours after the item sold out, then applies that fraction to estimate missed units. If baguettes sell 80% before noon and sold out at 10am, only the remaining pre-noon hour gets credited &mdash; not a full afternoon.
+  </div>
+</div>
+
+<!-- GENERATE -->
+<div id="tab-generate" class="panel">
+  <div class="card">
+    <div class="card-title">Generation settings</div>
+    <div class="ctrl-row">
+      <div class="pctctl">
+        <label>Overall adjustment:</label>
+        <input type="range" min="50" max="200" value="100" step="5" id="pct-slider" oninput="document.getElementById('pct-val').textContent=this.value+'%'" style="width:140px"/>
+        <span class="pctval" id="pct-val">100%</span>
+      </div>
+      <span style="font-size:12px;color:var(--text2)">Raise or lower all numbers globally (e.g. 110% = 10% buffer on everything)</span>
+    </div>
+    <div class="row3">
+      <div class="fg"><label>Week start (Tuesday)</label><input type="date" id="week-start"/></div>
+      <div class="fg"><label>Open time</label><input type="time" id="open-time" value="08:00"/></div>
+      <div class="fg"><label>Close time</label><input type="time" id="close-time" value="17:00"/></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btnp" onclick="generate()">Pull data &amp; generate</button>
+      <button class="btn" onclick="copyOut()">Copy to clipboard</button>
+    </div>
+  </div>
+  <div id="gen-status"></div>
+  <div id="out-wrap" style="display:none">
+    <div class="sec-label">Paste-ready output &mdash; tab-separated, matches your Excel column layout</div>
+    <div class="output" id="out-area"></div>
+  </div>
+</div>
+
+</div><!-- /content -->
+</div><!-- /shell -->
+
+<script>
+const DAYS = ['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
+const LOCS = ['Red','Bel','Wood'];
+const LOC_LABEL = {Red:'Redmond', Bel:'Bellevue', Wood:'Woodinville'};
+const SQ_VER = '2024-01-17';
+
+let catalog = [];
+let prodItems = [];
+let rels = [];
+let oosData = {};
+let curOosDay = 'Tuesday';
+let curOosLoc = 'Red';
+
+function save(k, v) { try { localStorage.setItem('bpp_'+k, v); } catch(e) {} }
+function load(k, def='') { try { return localStorage.getItem('bpp_'+k) || def; } catch(e) { return def; } }
+function saveJ(k, v) { try { localStorage.setItem('bpp_'+k, JSON.stringify(v)); } catch(e) {} }
+function loadJ(k, def) { try { const r = localStorage.getItem('bpp_'+k); return r ? JSON.parse(r) : def; } catch(e) { return def; } }
+
+function token() { return document.getElementById('sq-token').value.trim(); }
+function sqH() { return {'Authorization':'Bearer '+token(),'Content-Type':'application/json','Square-Version':SQ_VER}; }
+
+function showTab(name, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  el.classList.add('active');
+}
+function goTab(name) {
+  const tabs = document.querySelectorAll('.tab');
+  const panels = ['setup','catalog','recipes','oos','generate'];
+  const idx = panels.indexOf(name);
+  if(idx >= 0) showTab(name, tabs[idx]);
+}
+
+function setStatus(id, msg, type) {
+  document.getElementById(id).innerHTML = msg ? `<div class="status s${type}">${msg}</div>` : '';
+}
+
+function loadAll() {
+  document.getElementById('sq-token').value = load('sq_token');
+  document.getElementById('loc-red').value = load('loc_red');
+  document.getElementById('loc-bel').value = load('loc_bel');
+  document.getElementById('loc-wood').value = load('loc_wood');
+  document.getElementById('kitchen-buffer').value = load('kitchen_buffer', '5');
+  catalog = loadJ('catalog', []);
+  prodItems = loadJ('prod_items', []);
+  rels = loadJ('rels', []);
+  oosData = loadJ('oos_data', {});
+
+  const today = new Date();
+  const d = today.getDay();
+  const diff = d === 2 ? 7 : (d < 2 ? d + 5 : d - 2);
+  const tue = new Date(today);
+  tue.setDate(today.getDate() - diff);
+  document.getElementById('week-start').value = tue.toISOString().split('T')[0];
+
+  renderProdItems();
+  renderRels();
+  renderCatalogGrid();
+  renderOosDays();
+  renderOosLocs();
+  renderOosList();
+  updateRelProdSelect();
+  if(catalog.length) document.getElementById('catalog-count').textContent = catalog.length + ' items loaded from last sync';
+}
+
+// --- EXPORT / IMPORT ---
+function exportSettings() {
+  const cfg = {
+    version: 1,
+    catalog: catalog,
+    prodItems: prodItems,
+    rels: rels,
+    oosData: oosData,
+    kitchenBuffer: load('kitchen_buffer','5')
+  };
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'bakery-planner-settings.json';
+  a.click();
+}
+
+function importSettings(input) {
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const cfg = JSON.parse(e.target.result);
+      if(!cfg.version) throw new Error('Unrecognized file format');
+      if(cfg.catalog) { catalog = cfg.catalog; saveJ('catalog', catalog); }
+      if(cfg.prodItems) { prodItems = cfg.prodItems; saveJ('prod_items', prodItems); }
+      if(cfg.rels) { rels = cfg.rels; saveJ('rels', rels); }
+      if(cfg.oosData) { oosData = cfg.oosData; saveJ('oos_data', oosData); }
+      if(cfg.kitchenBuffer) { save('kitchen_buffer', cfg.kitchenBuffer); document.getElementById('kitchen-buffer').value = cfg.kitchenBuffer; }
+      renderProdItems(); renderRels(); renderCatalogGrid(); renderOosDays(); renderOosLocs(); renderOosList(); updateRelProdSelect();
+      if(catalog.length) document.getElementById('catalog-count').textContent = catalog.length + ' items loaded';
+      alert('Settings imported successfully! Add your Square token in the Setup tab to connect.');
+    } catch(err) {
+      alert('Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+// --- CONNECTION ---
+async function testConn() {
+  if(!token()) { setStatus('api-status','Enter your access token first.','err'); return; }
+  setStatus('api-status','<span class="spin"></span> Connecting to Square…','info');
+  try {
+    const r = await fetch('https://connect.squareup.com/v2/locations', {headers: sqH()});
+    const d = await r.json();
+    if(d.locations) {
+      const names = d.locations.map(l => `${l.name} (${l.id})`).join(' &bull; ');
+      setStatus('api-status','&#10003; Connected. Locations: ' + names, 'ok');
+    } else {
+      setStatus('api-status','Error: ' + (d.errors?.[0]?.detail || 'Unknown error'), 'err');
+    }
+  } catch(e) { setStatus('api-status','Connection failed — check your token and try again.','err'); }
+}
+
+// --- CATALOG SYNC ---
+async function syncCatalog() {
+  if(!token()) { setStatus('catalog-status','Enter your access token in Setup first.','err'); return; }
+  setStatus('catalog-status','<span class="spin"></span> Fetching catalog from Square…','info');
+  try {
+    let items = [], cursor = null;
+    do {
+      const url = 'https://connect.squareup.com/v2/catalog/list?types=ITEM' + (cursor ? '&cursor='+cursor : '');
+      const r = await fetch(url, {headers: sqH()});
+      const d = await r.json();
+      if(d.errors) { setStatus('catalog-status','Error: '+d.errors[0].detail,'err'); return; }
+      if(d.objects) {
+        for(const obj of d.objects) {
+          if(obj.type === 'ITEM' && obj.item_data) {
+            const base = obj.item_data.name;
+            if(obj.item_data.variations && obj.item_data.variations.length > 1) {
+              for(const v of obj.item_data.variations) {
+                const vname = v.item_variation_data?.name;
+                items.push(vname && vname.toLowerCase() !== 'regular' ? `${base} — ${vname}` : base);
+              }
+            } else {
+              items.push(base);
+            }
+          }
+        }
+      }
+      cursor = d.cursor || null;
+    } while(cursor);
+    catalog = [...new Set(items)].sort();
+    saveJ('catalog', catalog);
+    renderCatalogGrid();
+    document.getElementById('catalog-count').textContent = catalog.length + ' items synced';
+    setStatus('catalog-status','&#10003; Catalog synced — ' + catalog.length + ' items. Now add your production items below.','ok');
+  } catch(e) { setStatus('catalog-status','Failed: '+e.message,'err'); }
+}
+
+function renderCatalogGrid() {
+  const g = document.getElementById('catalog-grid');
+  if(!catalog.length) { g.style.display='none'; return; }
+  g.style.display = 'grid';
+  g.innerHTML = catalog.map(n => `<div class="cat-item" title="${n}">${n.length>30 ? n.slice(0,29)+'…' : n}</div>`).join('');
+}
+
+// --- PRODUCTION ITEMS ---
+function addProdItem() {
+  const name = document.getElementById('new-prod').value.trim();
+  const sec = document.getElementById('new-prod-sec').value;
+  if(!name) return;
+  if(prodItems.find(p => p.name.toLowerCase() === name.toLowerCase())) { alert('That production item already exists.'); return; }
+  prodItems.push({name, sec});
+  saveJ('prod_items', prodItems);
+  document.getElementById('new-prod').value = '';
+  renderProdItems();
+  updateRelProdSelect();
+}
+
+function removeProdItem(i) {
+  const name = prodItems[i].name;
+  if(!confirm(`Remove "${name}"? Any relationships using it will also be removed.`)) return;
+  prodItems.splice(i, 1);
+  rels = rels.filter(r => r.prod !== name);
+  saveJ('prod_items', prodItems);
+  saveJ('rels', rels);
+  renderProdItems();
+  renderRels();
+  updateRelProdSelect();
+}
+
+function renderProdItems() {
+  const el = document.getElementById('prod-items-list');
+  if(!prodItems.length) { el.innerHTML='<p class="empty">No production items yet. Add them below.</p>'; return; }
+  const retail = prodItems.filter(p => p.sec==='retail');
+  const kitchen = prodItems.filter(p => p.sec==='kitchen');
+  let html = '<table class="tbl"><thead><tr><th>Production item</th><th>Section</th><th>Linked menu items</th><th></th></tr></thead><tbody>';
+  const row = p => {
+    const i = prodItems.indexOf(p);
+    const count = rels.filter(r => r.prod === p.name).length;
+    return `<tr><td><strong>${p.name}</strong></td><td><span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}">${p.sec}</span></td><td style="color:var(--text2)">${count} item${count!==1?'s':''}</td><td><button class="btn btnsm" onclick="removeProdItem(${i})">&#128465;</button></td></tr>`;
+  };
+  if(retail.length) html += `<tr class="cat-header"><td colspan="4">Retail</td></tr>${retail.map(row).join('')}`;
+  if(kitchen.length) html += `<tr class="cat-header"><td colspan="4">Kitchen</td></tr>${kitchen.map(row).join('')}`;
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function updateRelProdSelect() {
+  const s = document.getElementById('rel-prod');
+  s.innerHTML = '<option value="">&#8212; select &#8212;</option>' +
+    prodItems.map(p => `<option value="${p.name}">${p.name} (${p.sec})</option>`).join('');
+}
+
+// --- AUTOCOMPLETE ---
+function filterSuggestions(q) {
+  const box = document.getElementById('rel-suggestions');
+  if(!q || q.length < 2) { box.style.display='none'; return; }
+  const matches = catalog.filter(c => c.toLowerCase().includes(q.toLowerCase())).slice(0, 10);
+  if(!matches.length) { box.style.display='none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = `<div class="suggest-box">${matches.map(m => `<div class="suggest-item" onmousedown="pickSug('${m.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">${m}</div>`).join('')}</div>`;
+}
+function pickSug(val) {
+  document.getElementById('rel-menu').value = val;
+  document.getElementById('rel-suggestions').style.display = 'none';
+}
+function hideSuggestions() { document.getElementById('rel-suggestions').style.display = 'none'; }
+
+// --- RELATIONSHIPS ---
+function addRel() {
+  const menu = document.getElementById('rel-menu').value.trim();
+  const qty = parseFloat(document.getElementById('rel-qty').value);
+  const prod = document.getElementById('rel-prod').value;
+  if(!menu || !prod || isNaN(qty) || qty <= 0) { alert('Fill in all three fields.'); return; }
+  rels.push({menu, qty, prod});
+  saveJ('rels', rels);
+  document.getElementById('rel-menu').value = '';
+  document.getElementById('rel-qty').value = '';
+  document.getElementById('rel-prod').value = '';
+  renderRels();
+  renderProdItems();
+}
+
+function removeRel(i) {
+  rels.splice(i, 1);
+  saveJ('rels', rels);
+  renderRels();
+  renderProdItems();
+}
+
+function renderRels() {
+  const el = document.getElementById('rel-list');
+  if(!rels.length) { el.innerHTML='<p class="empty">No relationships yet.</p>'; return; }
+  const byProd = {};
+  for(const r of rels) { if(!byProd[r.prod]) byProd[r.prod]=[]; byProd[r.prod].push(r); }
+  let html = '<table class="tbl"><thead><tr><th>Menu item (Square)</th><th>Uses</th><th>Production item</th><th></th></tr></thead><tbody>';
+  for(const [prod, rs] of Object.entries(byProd)) {
+    const pi = prodItems.find(p => p.name === prod);
+    html += `<tr class="cat-header"><td colspan="4">${prod} <span class="badge ${pi?.sec==='kitchen'?'bpurp':'binfo'}">${pi?.sec||''}</span></td></tr>`;
+    html += rs.map(r => {
+      const i = rels.indexOf(r);
+      return `<tr><td>${r.menu}</td><td style="color:var(--text2)">${r.qty}&times;</td><td>${r.prod}</td><td><button class="btn btnsm" onclick="removeRel(${i})">&#128465;</button></td></tr>`;
+    }).join('');
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// --- OOS ---
+function renderOosDays() {
+  document.getElementById('oos-days').innerHTML = DAYS.map(d =>
+    `<button class="dtab${d===curOosDay?' active':''}" onclick="switchOosDay('${d}')">${d.slice(0,3)}</button>`).join('');
+}
+function renderOosLocs() {
+  document.getElementById('oos-locs').innerHTML = LOCS.map(l =>
+    `<button class="ltab${l===curOosLoc?' active':''}" onclick="switchOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join('');
+}
+function switchOosDay(d) { curOosDay=d; renderOosDays(); renderOosList(); }
+function switchOosLoc(l) { curOosLoc=l; renderOosLocs(); renderOosList(); }
+
+function renderOosList() {
+  const key = curOosDay+'|'+curOosLoc;
+  const items = oosData[key] || [];
+  const el = document.getElementById('oos-list');
+  if(!items.length) { el.innerHTML=`<p class="empty">No out-of-stock events for ${curOosDay} at ${LOC_LABEL[curOosLoc]}.</p>`; return; }
+  el.innerHTML = '<table class="tbl"><thead><tr><th>Production item</th><th>Sold out at</th><th></th></tr></thead><tbody>' +
+    items.map((item, i) =>
+      `<tr><td>${item.name}</td><td><input type="time" value="${item.time}" onchange="updateOosTime('${key}',${i},this.value)" style="width:100px"/></td><td><button class="btn btnsm" onclick="removeOosEntry('${key}',${i})">&#128465;</button></td></tr>`
+    ).join('') + '</tbody></table>';
+}
+
+function addOosEntry() {
+  const prodNames = prodItems.map(p => p.name);
+  if(!prodNames.length) { alert('Add production items in the Catalog tab first.'); return; }
+  const name = prompt('Which production item sold out?\n\n' + prodNames.join('\n'));
+  if(!name) return;
+  const match = prodNames.find(n => n.toLowerCase() === name.trim().toLowerCase());
+  if(!match) { alert('Please use an exact production item name from the list.'); return; }
+  const key = curOosDay+'|'+curOosLoc;
+  if(!oosData[key]) oosData[key] = [];
+  oosData[key].push({name: match, time: '12:00'});
+  saveJ('oos_data', oosData);
+  renderOosList();
+}
+
+function updateOosTime(key, i, val) { oosData[key][i].time = val; saveJ('oos_data', oosData); }
+function removeOosEntry(key, i) { oosData[key].splice(i,1); saveJ('oos_data', oosData); renderOosList(); }
+
+// --- SQUARE DATA ---
+function timeToH(t) { const [h,m] = t.split(':').map(Number); return h + m/60; }
+
+async function fetchOrders(locId, startISO, endISO) {
+  let orders = [], cursor = null;
+  do {
+    const body = {
+      location_ids: [locId],
+      query: {
+        filter: {
+          date_time_filter: { created_at: { start_at: startISO, end_at: endISO } },
+          state_filter: { states: ['COMPLETED'] }
+        }
+      }
+    };
+    if(cursor) body.cursor = cursor;
+    const r = await fetch('https://connect.squareup.com/v2/orders/search', {
+      method:'POST', headers: sqH(), body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if(d.errors) throw new Error(d.errors[0].detail);
+    if(d.orders) orders = orders.concat(d.orders);
+    cursor = d.cursor || null;
+  } while(cursor);
+  return orders;
+}
+
+function aggregateOrders(orders) {
+  const counts = {}, hourly = {};
+  for(const o of orders) {
+    if(!o.line_items) continue;
+    const hr = new Date(o.created_at).getHours();
+    for(const li of o.line_items) {
+      const name = li.name || '?';
+      const qty = parseInt(li.quantity) || 1;
+      counts[name] = (counts[name]||0) + qty;
+      if(!hourly[name]) hourly[name] = {};
+      hourly[name][hr] = (hourly[name][hr]||0) + qty;
+    }
+  }
+  return {counts, hourly};
+}
+
+function calcOosAddition(hourlyData, soldOutTime, openTime, closeTime) {
+  if(!hourlyData) return 0;
+  const soldOutH = timeToH(soldOutTime);
+  const closeH = timeToH(closeTime);
+  const openH = timeToH(openTime);
+  if(soldOutH >= closeH) return 0;
+  let totalSold = 0, afterSold = 0;
+  for(const [h, q] of Object.entries(hourlyData)) {
+    const hr = parseInt(h);
+    if(hr >= openH && hr < closeH) {
+      totalSold += q;
+      if(hr >= soldOutH) afterSold += q;
+    }
+  }
+  if(totalSold === 0) return 0;
+  const actualTotal = Object.values(hourlyData).reduce((a,b)=>a+b,0);
+  return Math.ceil(actualTotal * (afterSold / totalSold));
+}
+
+// --- GENERATE ---
+async function generate() {
+  const tok = token();
+  const locRed = document.getElementById('loc-red').value.trim();
+  const locBel = document.getElementById('loc-bel').value.trim();
+  const locWood = document.getElementById('loc-wood').value.trim();
+  const weekStart = document.getElementById('week-start').value;
+  const pct = parseInt(document.getElementById('pct-slider').value) / 100;
+  const openTime = document.getElementById('open-time').value;
+  const closeTime = document.getElementById('close-time').value;
+  const kitchenBuffer = 1 + (parseFloat(document.getElementById('kitchen-buffer').value) || 5) / 100;
+
+  if(!tok) { setStatus('gen-status','Add your Square token in the Setup tab.','err'); return; }
+  if(!weekStart) { setStatus('gen-status','Select a week start date.','err'); return; }
+  if(!prodItems.length) { setStatus('gen-status','Add production items in the Catalog tab first.','err'); return; }
+
+  const locMap = {Red: locRed, Bel: locBel, Wood: locWood};
+  const startDt = new Date(weekStart + 'T00:00:00');
+
+  setStatus('gen-status','<span class="spin"></span> Starting data fetch…','info');
+
+  try {
+    const salesGrid = {}, hourlyGrid = {};
+    for(const day of DAYS) { salesGrid[day]={}; hourlyGrid[day]={}; for(const l of LOCS) { salesGrid[day][l]={}; hourlyGrid[day][l]={}; } }
+
+    for(const [loc, locId] of Object.entries(locMap)) {
+      if(!locId) continue;
+      for(let di=0; di<7; di++) {
+        const day = DAYS[di];
+        setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} &mdash; ${day} (${di+1}/7)…`,'info');
+        const dayDt = new Date(startDt); dayDt.setDate(startDt.getDate()+di);
+        const nextDt = new Date(dayDt); nextDt.setDate(dayDt.getDate()+1);
+        try {
+          const orders = await fetchOrders(locId, dayDt.toISOString(), nextDt.toISOString());
+          const {counts, hourly} = aggregateOrders(orders);
+          salesGrid[day][loc] = counts;
+          hourlyGrid[day][loc] = hourly;
+        } catch(e) { console.warn('Fetch error', loc, day, e.message); }
+      }
+    }
+
+    setStatus('gen-status','<span class="spin"></span> Calculating production quantities…','info');
+
+    const result = {};
+    for(const pi of prodItems) {
+      result[pi.name] = {sec: pi.sec};
+      for(const day of DAYS) {
+        result[pi.name][day] = {};
+        for(const loc of LOCS) {
+          let qty = 0;
+          const sales = salesGrid[day][loc];
+          const hourly = hourlyGrid[day][loc];
+          const myRels = rels.filter(r => r.prod === pi.name);
+
+          for(const rel of myRels) {
+            const sold = sales[rel.menu] || 0;
+            qty += sold * rel.qty;
+            const oosKey = day+'|'+loc;
+            const oosEntry = (oosData[oosKey]||[]).find(o => o.name === pi.name);
+            if(oosEntry) {
+              const addl = calcOosAddition(hourly[rel.menu], oosEntry.time, openTime, closeTime);
+              qty += addl * rel.qty;
+            }
+          }
+
+          // If no relationships defined, fall back to direct sales of this item by name
+          if(myRels.length === 0) {
+            const directSold = sales[pi.name] || 0;
+            qty = directSold;
+            const oosKey = day+'|'+loc;
+            const oosEntry = (oosData[oosKey]||[]).find(o => o.name === pi.name);
+            if(oosEntry) qty += calcOosAddition(hourly[pi.name], oosEntry.time, openTime, closeTime);
+          }
+
+          if(pi.sec === 'kitchen') qty = qty * kitchenBuffer;
+          qty = Math.ceil(qty * pct);
+          result[pi.name][day][loc] = qty;
+        }
+      }
+    }
+
+    const retailItems = prodItems.filter(p => p.sec==='retail');
+    const kitchenItems = prodItems.filter(p => p.sec==='kitchen');
+
+    function buildRows(items) {
+      return items.map(pi => {
+        const r = result[pi.name];
+        let totRed=0, totBel=0, totWood=0, totAll=0;
+        const cells = [];
+        for(const day of DAYS) {
+          const rd = r[day]?.Red||0, bl = r[day]?.Bel||0, wd = r[day]?.Wood||0;
+          cells.push(rd, bl, wd, rd+bl+wd);
+          totRed+=rd; totBel+=bl; totWood+=wd; totAll+=rd+bl+wd;
+        }
+        return pi.name+'\t'+cells.join('\t')+'\t\t'+totAll+'\t'+totBel+'\t'+totWood+'\t'+totRed;
+      }).join('\n');
+    }
+
+    const header = 'Item:\t' + DAYS.flatMap(d => ['Red '+d,'Bel '+d,'Wood '+d,d]).join('\t') + '\t\tTotal:\tBellevue Total:\tWoodinville Total:\tRedmond Total:';
+    const output = [
+      header,
+      buildRows(retailItems),
+      'Kitchen:',
+      buildRows(kitchenItems),
+      header
+    ].join('\n');
+
+    document.getElementById('out-area').textContent = output;
+    document.getElementById('out-wrap').style.display = 'block';
+    setStatus('gen-status','&#10003; Done! Copy the output below and paste into your Excel sheet.','ok');
+  } catch(e) {
+    setStatus('gen-status','Error: '+e.message,'err');
+  }
+}
+
+async function copyOut() {
+  const text = document.getElementById('out-area').textContent;
+  if(!text) { alert('Generate output first.'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('Copied to clipboard — paste directly into your Excel sheet.');
+  } catch(e) {
+    alert('Select all the text in the output box and copy manually (Ctrl+C or Cmd+C).');
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>
