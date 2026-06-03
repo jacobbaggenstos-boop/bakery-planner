@@ -300,11 +300,16 @@
       <div class="fg"><label>Close time</label><input type="time" id="close-time" value="17:00"/></div>
     </div>
     <div class="btn-row">
-      <button class="btn btnp" onclick="generate()">Pull data &amp; generate</button>
+      <button class="btn btnp" onclick="generate(false)">Pull data &amp; generate</button>
       <button class="btn" onclick="copyOut()">Copy to clipboard</button>
+      <button class="btn" onclick="generate(true)" title="Shows every item name Square returned — use these exact names in Relationships">&#128269; Debug item names</button>
     </div>
   </div>
   <div id="gen-status"></div>
+  <div id="debug-wrap" style="display:none">
+    <div class="sec-label">Debug — exact item names Square returned in orders (Tuesday, Redmond only)</div>
+    <div class="output" id="debug-area" style="max-height:260px"></div>
+  </div>
   <div id="out-wrap" style="display:none">
     <div class="sec-label">Paste-ready output &mdash; tab-separated, matches your Excel column layout</div>
     <div class="output" id="out-area"></div>
@@ -734,7 +739,7 @@ function calcOosAddition(hourlyData, soldOutTime, openTime, closeTime) {
 }
 
 // --- GENERATE ---
-async function generate() {
+async function generate(debugMode=false) {
   const tok = token();
   const locRed = document.getElementById('loc-red').value.trim();
   const locBel = document.getElementById('loc-bel').value.trim();
@@ -772,6 +777,22 @@ async function generate() {
           hourlyGrid[day][loc] = hourly;
         } catch(e) { console.warn('Fetch error', loc, day, e.message); }
       }
+    }
+
+    // Debug mode: show raw Square item names from Tuesday Redmond
+    if(debugMode) {
+      const sample = salesGrid['Tuesday']['Red'];
+      const lines = Object.entries(sample)
+        .sort((a,b) => b[1]-a[1])
+        .map(([name, qty]) => `${qty.toString().padStart(4)}  ${name}`);
+      document.getElementById('debug-area').textContent =
+        lines.length
+          ? 'QTY   ITEM NAME (exact, from Square)\n' + '─'.repeat(60) + '\n' + lines.join('\n')
+          : 'No orders found for Tuesday at Redmond. Check your week start date or location ID.';
+      document.getElementById('debug-wrap').style.display = 'block';
+      document.getElementById('out-wrap').style.display = 'none';
+      setStatus('gen-status','Debug complete — these are the exact names Square sent back. Match them in your Relationships tab.','ok');
+      return;
     }
 
     setStatus('gen-status','<span class="spin"></span> Calculating production quantities…','info');
