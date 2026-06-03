@@ -679,15 +679,10 @@ function aggregateOrders(orders) {
       const varName = li.variation_name || '';
       const fullName = varName && varName.toLowerCase() !== 'regular' ? `${baseName} — ${varName}` : baseName;
       const qty = parseInt(li.quantity) || 1;
-      // Store both the full name and base name so matching works either way
+      // Store by full variant name only — lookupSales/lookupHourly handles variant matching
       counts[fullName] = (counts[fullName]||0) + qty;
-      if(fullName !== baseName) counts[baseName] = (counts[baseName]||0) + qty;
       if(!hourly[fullName]) hourly[fullName] = {};
       hourly[fullName][hr] = (hourly[fullName][hr]||0) + qty;
-      if(fullName !== baseName) {
-        if(!hourly[baseName]) hourly[baseName] = {};
-        hourly[baseName][hr] = (hourly[baseName][hr]||0) + qty;
-      }
     }
   }
   return {counts, hourly};
@@ -695,24 +690,32 @@ function aggregateOrders(orders) {
 
 // Fuzzy lookup: finds sales for a menu item name using flexible matching
 // Tries exact match first, then checks if any Square key contains the rel name or vice versa
+// Strip invisible unicode chars for clean comparison
+function cleanName(s) {
+  return s.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '').trim().toLowerCase();
+}
+
+// Match rel name against a Square key:
+// exact match OR key starts with relName + ' — ' (variant separator)
+// Prevents "Baguette" from matching "Farine Chicken Club Baguette" accidentally
+function nameMatches(squareKey, relName) {
+  const sk = cleanName(squareKey);
+  const rn = cleanName(relName);
+  return sk === rn || sk.startsWith(rn + ' — ') || sk.startsWith(rn + ' - ');
+}
+
 function lookupSales(sales, menuName) {
-  if(sales[menuName]) return sales[menuName];
-  const lower = menuName.toLowerCase();
   let total = 0;
   for(const [key, qty] of Object.entries(sales)) {
-    const kl = key.toLowerCase();
-    if(kl.includes(lower) || lower.includes(kl)) total += qty;
+    if(nameMatches(key, menuName)) total += qty;
   }
   return total;
 }
 
 function lookupHourly(hourly, menuName) {
-  if(hourly[menuName]) return hourly[menuName];
-  const lower = menuName.toLowerCase();
   const merged = {};
   for(const [key, hrs] of Object.entries(hourly)) {
-    const kl = key.toLowerCase();
-    if(kl.includes(lower) || lower.includes(kl)) {
+    if(nameMatches(key, menuName)) {
       for(const [h, q] of Object.entries(hrs)) merged[h] = (merged[h]||0) + q;
     }
   }
