@@ -899,16 +899,6 @@ async function generate(debugMode=false){
       buildRows('kitchen'),
       header
     ].join('\n');
-    }
-
-    const output=[
-      header,
-      buildRows(RETAIL_ORDER,'retail'),
-      'Kitchen:',
-      buildRows(KITCHEN_ORDER,'kitchen'),
-      header
-    ].join('\n');
-
     document.getElementById('out-area').textContent=output;
     document.getElementById('out-wrap').style.display='block';
     setStatus('gen-status','Done! Blank cells preserve your Excel SUM formulas. Copy and paste.','ok');
