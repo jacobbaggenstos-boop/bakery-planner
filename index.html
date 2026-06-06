@@ -132,7 +132,7 @@ input[type=range]{accent-color:var(--text)}
         <div class="card-title">Square connection <span class="badge bwarn">stored in shared config</span></div>
         <div id="api-status"></div>
         <div class="fg" style="margin-bottom:12px"><label>Proxy URL (Val Town or Cloudflare Worker)</label><input type="text" id="proxy-url" placeholder="https://yourname.web.val.run" oninput="debounceSave()"/></div>
-        <div class="fg" style="margin-bottom:12px"><label>Square production access token <span class="badge bwarn">personal — not shared</span></label><input type="password" id="sq-token" placeholder="EAAAl…" oninput="saveLocalToken()"/></div>
+        <div class="fg" style="margin-bottom:12px"><label>Square production access token <span class="badge bwarn">shared with team via Supabase</span></label><input type="password" id="sq-token" placeholder="EAAAl…" oninput="saveSharedToken()"/></div>
         <div class="row3">
           <div class="fg"><label>Redmond location ID</label><input type="text" id="loc-red" placeholder="LXXXXXXXX" oninput="debounceSave()"/></div>
           <div class="fg"><label>Bellevue location ID</label><input type="text" id="loc-bel" placeholder="LXXXXXXXX" oninput="debounceSave()"/></div>
@@ -141,6 +141,8 @@ input[type=range]{accent-color:var(--text)}
         <div class="btn-row">
           <button class="btn btnp" onclick="testConn()">Test connection</button>
           <button class="btn" onclick="showTab('catalog',document.querySelectorAll('.tab')[1])">Next →</button>
+          <button class="btn" onclick="document.getElementById('import-json').click()">Import old settings (JSON)</button>
+          <input type="file" id="import-json" accept=".json" style="display:none" onchange="importSettings(this)"/>
         </div>
       </div>
       <div class="card">
@@ -262,6 +264,11 @@ input[type=range]{accent-color:var(--text)}
           <button class="btn" onclick="generate(true)" title="Show exact Square item names for debugging">Debug item names</button>
         </div>
       </div>
+      <div class="card">
+        <div class="card-title">Per-item adjustments <span class="badge binfo">override global %</span></div>
+        <div class="hint">Set a custom multiplier for any item. Applied on top of the global adjustment — e.g. global 110% × item 80% = 88%. Leave blank to use the global setting.</div>
+        <div id="item-multipliers-list"></div>
+      </div>
       <div id="gen-status"></div>
       <div id="debug-wrap" style="display:none">
         <div class="sec-label">Debug — exact Square item names (Tuesday, Redmond)</div>
@@ -302,7 +309,7 @@ const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let cfg = { catalog:[], prod_items:[], rels:[], proxy_url:'', open_time:'08:00', close_time:'17:00', kitchen_buffer:5 };
+let cfg = { catalog:[], prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{} };
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red';
 let orderQtys = {};
@@ -357,9 +364,14 @@ async function loadConfig(){
     cfg.prod_items = data.prod_items||[];
     cfg.rels = data.rels||[];
     cfg.proxy_url = data.proxy_url||'';
+    cfg.sq_token = data.sq_token||'';
+    cfg.loc_red = data.loc_red||'';
+    cfg.loc_bel = data.loc_bel||'';
+    cfg.loc_wood = data.loc_wood||'';
     cfg.open_time = data.open_time||'08:00';
     cfg.close_time = data.close_time||'17:00';
     cfg.kitchen_buffer = data.kitchen_buffer||5;
+    cfg.item_multipliers = data.item_multipliers||{};
   }
   // Load OOS for current week from Supabase
   const weekStart = getDefaultWeekStart();
@@ -374,12 +386,19 @@ async function loadConfig(){
   try{ document.getElementById('sq-token').value = localStorage.getItem('bpp_sq_token')||''; }catch(e){}
 }
 
-function saveLocalToken(){
-  try{ localStorage.setItem('bpp_sq_token', document.getElementById('sq-token').value); }catch(e){}
+function saveSharedToken(){
+  // Debounce — only save after user stops typing
+  clearTimeout(window._tokenTimer);
+  window._tokenTimer = setTimeout(async ()=>{
+    const val = document.getElementById('sq-token').value.trim();
+    cfg.sq_token = val;
+    await sb.from('bakery_config').update({sq_token:val, updated_at:new Date().toISOString(), updated_by:currentUser.id}).eq('id','main');
+  }, 1000);
 }
 
 function applyConfig(){
   document.getElementById('proxy-url').value = cfg.proxy_url;
+  document.getElementById('sq-token').value = cfg.sq_token;
   document.getElementById('loc-red').value = cfg.loc_red||'';
   document.getElementById('loc-bel').value = cfg.loc_bel||'';
   document.getElementById('loc-wood').value = cfg.loc_wood||'';
@@ -389,6 +408,7 @@ function applyConfig(){
   renderProdItems(); renderRels(); renderCatalogGrid();
   renderOosDays(); renderOosLocs(); renderOosList();
   updateRelProdSelect();
+  renderItemMultipliers();
   if(cfg.catalog.length) document.getElementById('catalog-count').textContent = cfg.catalog.length+' items';
   // Set default week start
   document.getElementById('week-start').value = getDefaultWeekStart();
@@ -409,6 +429,7 @@ function debounceSave(){
 async function saveConfig(){
   const update = {
     proxy_url: document.getElementById('proxy-url').value.trim(),
+    sq_token: document.getElementById('sq-token').value.trim()||cfg.sq_token,
     loc_red: document.getElementById('loc-red').value.trim(),
     loc_bel: document.getElementById('loc-bel').value.trim(),
     loc_wood: document.getElementById('loc-wood').value.trim(),
@@ -418,6 +439,7 @@ async function saveConfig(){
     catalog: cfg.catalog,
     prod_items: cfg.prod_items,
     rels: cfg.rels,
+    item_multipliers: cfg.item_multipliers,
     updated_at: new Date().toISOString(),
     updated_by: currentUser.id
   };
@@ -444,7 +466,7 @@ function setStatus(id, msg, type){
 }
 
 // ── SQUARE ────────────────────────────────────────────────
-function token(){ return document.getElementById('sq-token').value.trim(); }
+function token(){ return document.getElementById('sq-token').value.trim()||cfg.sq_token||''; }
 function proxyBase(){ return (document.getElementById('proxy-url').value.trim()||cfg.proxy_url||'').replace(/\/$/,''); }
 function sqUrl(path){
   const base=proxyBase();
@@ -810,7 +832,10 @@ async function generate(debugMode=false){
           const weekQtys=weekStarts.map((_,w)=>calcQtyForWeek(pi,day,loc,w));
           let qty=smartAverage(weekQtys);
           if(pi.sec==='kitchen')qty=qty*kitchenBuffer;
-          qty=Math.ceil(qty*pct);
+          // Apply per-item multiplier on top of global pct
+          const itemMult = cfg.item_multipliers[pi.name];
+          const effectivePct = itemMult !== undefined ? pct * (itemMult/100) : pct;
+          qty=Math.ceil(qty*effectivePct);
           result[pi.name][day][loc]=qty;
         }
       }
@@ -857,6 +882,89 @@ async function copyOut(){
   if(!text){alert('Generate output first.');return;}
   try{ await navigator.clipboard.writeText(text); alert('Copied — paste directly into Excel.'); }
   catch(e){ alert('Select the output text and copy manually (Ctrl+C / Cmd+C).'); }
+}
+
+// ── IMPORT SETTINGS ──────────────────────────────────────
+async function importSettings(input) {
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if(!data.version && !data.prod_items && !data.rels) throw new Error('Unrecognised file format');
+      const update = {};
+      if(data.catalog)       update.catalog = data.catalog;
+      if(data.prodItems || data.prod_items) update.prod_items = (data.prodItems||data.prod_items);
+      if(data.rels)          update.rels = data.rels;
+      if(data.proxyUrl || data.proxy_url) update.proxy_url = data.proxyUrl||data.proxy_url;
+      if(data.kitchenBuffer !== undefined) update.kitchen_buffer = parseFloat(data.kitchenBuffer)||5;
+      // Push to Supabase
+      await sb.from('bakery_config').update({
+        ...update,
+        updated_at: new Date().toISOString(),
+        updated_by: currentUser.id
+      }).eq('id','main');
+      Object.assign(cfg, update);
+      applyConfig();
+      alert('Settings imported and saved! Your team will see these changes automatically.');
+    } catch(err) {
+      alert('Import failed: '+err.message);
+    }
+  };
+  reader.readAsText(file);
+  input.value='';
+}
+
+// ── PER-ITEM MULTIPLIERS ──────────────────────────────────
+function renderItemMultipliers() {
+  const el = document.getElementById('item-multipliers-list');
+  if(!el) return;
+  const allItems = [...RETAIL_ORDER, ...KITCHEN_ORDER];
+  el.innerHTML = '<table class="tbl"><thead><tr><th>Item</th><th>Section</th><th style="width:140px">Multiplier %</th><th style="width:80px">Effective</th></tr></thead><tbody>' +
+    allItems.map(name => {
+      const sec = KITCHEN_ORDER.includes(name) && !RETAIL_ORDER.includes(name) ? 'kitchen' : 'retail';
+      const val = cfg.item_multipliers[name] !== undefined ? cfg.item_multipliers[name] : '';
+      const globalPct = parseInt(document.getElementById('pct-slider')?.value||100);
+      const effective = val !== '' ? Math.round(globalPct * parseFloat(val) / 100) + '%' : globalPct + '%';
+      return `<tr>
+        <td>${name}</td>
+        <td><span class="badge ${sec==='kitchen'?'bpurp':'binfo'}">${sec}</span></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px">
+            <input type="number" min="0" max="300" step="5"
+              value="${val}"
+              placeholder="global"
+              style="width:80px;font-size:13px;text-align:right"
+              oninput="updateItemMultiplier('${name.replace(/'/g,"\'")}',this.value)"
+            />
+            <span style="font-size:12px;color:var(--text2)">%</span>
+            ${val!==''?`<button class="btn btnsm" onclick="clearItemMultiplier('${name.replace(/'/g,"\'")}')" title="Reset to global">✕</button>`:''}
+          </div>
+        </td>
+        <td style="font-size:13px;font-weight:600;color:${val!==''?'var(--info)':'var(--text3)'}">${effective}</td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
+}
+
+function updateItemMultiplier(name, val) {
+  const num = parseFloat(val);
+  if(val===''||isNaN(num)){
+    delete cfg.item_multipliers[name];
+  } else {
+    cfg.item_multipliers[name] = num;
+  }
+  // Debounce save
+  clearTimeout(window._multTimer);
+  window._multTimer = setTimeout(()=>saveConfigField('item_multipliers', cfg.item_multipliers), 800);
+  // Refresh effective column
+  renderItemMultipliers();
+}
+
+function clearItemMultiplier(name) {
+  delete cfg.item_multipliers[name];
+  saveConfigField('item_multipliers', cfg.item_multipliers);
+  renderItemMultipliers();
 }
 
 // ── BOOT ─────────────────────────────────────────────────
