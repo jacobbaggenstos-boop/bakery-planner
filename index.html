@@ -2,887 +2,865 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Bakery Production Planner</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  :root {
-    --bg: #ffffff;
-    --bg2: #f7f6f3;
-    --bg3: #f0efe9;
-    --text: #1a1a1a;
-    --text2: #6b6b6b;
-    --text3: #9b9b9b;
-    --border: rgba(0,0,0,0.12);
-    --border2: rgba(0,0,0,0.22);
-    --info-bg: #e6f1fb;
-    --info-text: #0c447c;
-    --ok-bg: #eaf3de;
-    --ok-text: #27500a;
-    --err-bg: #fcebeb;
-    --err-text: #791f1f;
-    --warn-bg: #faeeda;
-    --warn-text: #633806;
-    --purp-bg: #eeedfe;
-    --purp-text: #3c3489;
-    --radius: 8px;
-    --radius-lg: 12px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1e1e1e;
-      --bg2: #272727;
-      --bg3: #2e2e2e;
-      --text: #f0f0f0;
-      --text2: #aaaaaa;
-      --text3: #717171;
-      --border: rgba(255,255,255,0.12);
-      --border2: rgba(255,255,255,0.22);
-      --info-bg: #0c2a48;
-      --info-text: #85b7eb;
-      --ok-bg: #17340a;
-      --ok-text: #97c459;
-      --err-bg: #3a1010;
-      --err-text: #f09595;
-      --warn-bg: #3a2404;
-      --warn-text: #fac775;
-      --purp-bg: #1e1b4a;
-      --purp-text: #afa9ec;
-    }
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg3); color: var(--text); font-size: 14px; line-height: 1.5; }
-  .shell { max-width: 860px; margin: 0 auto; padding: 0; }
-  header { background: var(--bg); border-bottom: 0.5px solid var(--border); padding: 16px 24px; position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  header h1 { font-size: 17px; font-weight: 600; color: var(--text); }
-  header p { font-size: 12px; color: var(--text2); margin-top: 1px; }
-  .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
-  .tabs { background: var(--bg); border-bottom: 0.5px solid var(--border); padding: 0 24px; display: flex; gap: 2px; }
-  .tab { font-size: 13px; padding: 10px 14px; border: none; background: none; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 4px 4px 0 0; }
-  .tab:hover:not(.active) { background: var(--bg2); color: var(--text); }
-  .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
-  .content { padding: 24px; }
-  .panel { display: none; } .panel.active { display: block; }
-  .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px; }
-  .card-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .hint { font-size: 12px; color: var(--text2); line-height: 1.7; margin-bottom: 14px; }
-  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-  .fg { display: flex; flex-direction: column; gap: 4px; }
-  .fg label { font-size: 11px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.4px; }
-  .fg input, .fg select, input[type=text], input[type=number], input[type=password], input[type=date], input[type=time], select {
-    background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius);
-    padding: 7px 10px; font-size: 13px; color: var(--text); width: 100%;
-  }
-  .fg input:focus, .fg select:focus, input:focus, select:focus { outline: 2px solid var(--info-text); outline-offset: 1px; }
-  input[type=password] { font-family: monospace; letter-spacing: 2px; }
-  input[type=range] { width: 100%; accent-color: var(--text); }
-  .btn { padding: 8px 14px; font-size: 13px; border-radius: var(--radius); cursor: pointer; border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); font-weight: 500; white-space: nowrap; }
-  .btn:hover { background: var(--bg2); }
-  .btn:active { transform: scale(0.98); }
-  .btnp { background: var(--text); color: var(--bg); border-color: var(--text); }
-  .btnp:hover { opacity: 0.85; }
-  .btnsm { padding: 4px 9px; font-size: 12px; }
-  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
-  .bwarn { background: var(--warn-bg); color: var(--warn-text); }
-  .bok { background: var(--ok-bg); color: var(--ok-text); }
-  .binfo { background: var(--info-bg); color: var(--info-text); }
-  .bpurp { background: var(--purp-bg); color: var(--purp-text); }
-  .status { font-size: 13px; padding: 10px 14px; border-radius: var(--radius); margin-bottom: 14px; line-height: 1.5; }
-  .sinfo { background: var(--info-bg); color: var(--info-text); }
-  .serr { background: var(--err-bg); color: var(--err-text); }
-  .sok { background: var(--ok-bg); color: var(--ok-text); }
-  .step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
-  .stepn { width: 24px; height: 24px; border-radius: 50%; background: var(--bg2); border: 0.5px solid var(--border2); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; margin-top: 1px; }
-  .step p { font-size: 13px; color: var(--text); line-height: 1.7; }
-  .step code { font-family: monospace; font-size: 12px; background: var(--bg2); padding: 1px 6px; border-radius: 4px; border: 0.5px solid var(--border); }
-  .step a { color: var(--info-text); }
-  .tbl { width: 100%; font-size: 12px; border-collapse: collapse; }
-  .tbl th { font-size: 11px; font-weight: 600; color: var(--text2); text-align: left; padding: 7px 10px; border-bottom: 0.5px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.3px; }
-  .tbl td { padding: 7px 10px; border-bottom: 0.5px solid var(--border); color: var(--text); vertical-align: middle; }
-  .tbl tr:last-child td { border-bottom: none; }
-  .tbl tbody tr:hover td { background: var(--bg2); }
-  .cat-header td { font-size: 11px; font-weight: 600; color: var(--text2); background: var(--bg2); text-transform: uppercase; letter-spacing: 0.4px; padding: 5px 10px; }
-  .add-row { display: flex; gap: 8px; margin-top: 12px; align-items: flex-end; flex-wrap: wrap; }
-  .add-row .fg { flex: 1; min-width: 110px; }
-  .add-row .fg-sm { flex: 0 0 75px; }
-  .day-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
-  .dtab { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 0.5px solid var(--border2); background: var(--bg); cursor: pointer; color: var(--text2); font-weight: 500; }
-  .dtab.active { background: var(--text); color: var(--bg); border-color: var(--text); }
-  .loc-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-  .ltab { font-size: 12px; padding: 4px 11px; border-radius: 20px; border: 0.5px solid var(--border); background: var(--bg); cursor: pointer; color: var(--text2); }
-  .ltab.active { background: var(--info-bg); color: var(--info-text); border-color: var(--info-text); }
-  .ctrl-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
-  .pctctl { display: flex; align-items: center; gap: 10px; }
-  .pctctl label { font-size: 13px; color: var(--text2); white-space: nowrap; }
-  .pctval { font-size: 15px; font-weight: 600; min-width: 44px; color: var(--text); }
-  .output { background: var(--bg2); border-radius: var(--radius); padding: 14px; font-family: monospace; font-size: 11px; line-height: 2; color: var(--text); white-space: pre; overflow-x: auto; max-height: 420px; overflow-y: auto; border: 0.5px solid var(--border); }
-  .sec-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text3); margin: 16px 0 8px; }
-  .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 5px; max-height: 240px; overflow-y: auto; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg2); }
-  .cat-item { font-size: 12px; padding: 5px 9px; border-radius: var(--radius); border: 0.5px solid var(--border); cursor: default; color: var(--text2); background: var(--bg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .empty { text-align: center; padding: 20px; color: var(--text2); font-size: 13px; }
-  .suggest-box { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius); position: absolute; z-index: 50; width: 100%; max-height: 180px; overflow-y: auto; top: 2px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
-  .suggest-item { padding: 7px 12px; font-size: 12px; cursor: pointer; color: var(--text); }
-  .suggest-item:hover { background: var(--bg2); }
-  .info-box { background: var(--bg2); border-radius: var(--radius); padding: 14px 16px; font-size: 13px; color: var(--text2); line-height: 1.7; border: 0.5px solid var(--border); }
-  .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border2); border-top-color: var(--text); border-radius: 50%; animation: sp 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
-  @keyframes sp { to { transform: rotate(360deg); } }
-  @media (max-width: 600px) {
-    .row2, .row3 { grid-template-columns: 1fr; }
-    header { flex-direction: column; align-items: flex-start; gap: 8px; }
-    .header-actions { width: 100%; }
-    .tabs { overflow-x: auto; }
-  }
+:root{
+  --bg:#fff;--bg2:#f7f6f3;--bg3:#f0efe9;--text:#1a1a1a;--text2:#6b6b6b;--text3:#9b9b9b;
+  --border:rgba(0,0,0,0.12);--border2:rgba(0,0,0,0.22);
+  --info-bg:#e6f1fb;--info:#0c447c;--ok-bg:#eaf3de;--ok:#27500a;
+  --err-bg:#fcebeb;--err:#791f1f;--warn-bg:#faeeda;--warn:#633806;
+  --purp-bg:#eeedfe;--purp:#3c3489;--radius:8px;--radius-lg:12px;
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#1e1e1e;--bg2:#272727;--bg3:#2e2e2e;--text:#f0f0f0;--text2:#aaa;--text3:#717171;
+  --border:rgba(255,255,255,0.12);--border2:rgba(255,255,255,0.22);
+  --info-bg:#0c2a48;--info:#85b7eb;--ok-bg:#17340a;--ok:#97c459;
+  --err-bg:#3a1010;--err:#f09595;--warn-bg:#3a2404;--warn:#fac775;
+  --purp-bg:#1e1b4a;--purp:#afa9ec;}
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg3);color:var(--text);font-size:14px;min-height:100vh}
+.shell{max-width:900px;margin:0 auto;padding:0}
+.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.auth-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:380px}
+header{background:var(--bg);border-bottom:0.5px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:100}
+header h1{font-size:17px;font-weight:600}
+header p{font-size:12px;color:var(--text2)}
+.tabs{display:flex;gap:2px;border-bottom:0.5px solid var(--border);background:var(--bg);padding:0 24px;overflow-x:auto}
+.tab{font-size:13px;padding:10px 14px;border:none;background:none;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;border-radius:4px 4px 0 0}
+.tab:hover:not(.active){background:var(--bg2);color:var(--text)}
+.tab.active{color:var(--text);border-bottom-color:var(--text);font-weight:500}
+.content{padding:24px}
+.panel{display:none}.panel.active{display:block}
+.card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hint{font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
+.fg input,.fg select,input,select{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:7px 10px;font-size:13px;color:var(--text);width:100%}
+input[type=password]{font-family:monospace;letter-spacing:2px}
+input[type=range]{accent-color:var(--text)}
+.btn{padding:8px 14px;font-size:13px;border-radius:var(--radius);cursor:pointer;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-weight:500;white-space:nowrap}
+.btn:hover{background:var(--bg2)}.btn:active{transform:scale(.98)}
+.btnp{background:var(--text);color:var(--bg);border-color:var(--text)}.btnp:hover{opacity:.85}
+.btnsm{padding:4px 9px;font-size:12px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500}
+.bwarn{background:var(--warn-bg);color:var(--warn)}.bok{background:var(--ok-bg);color:var(--ok)}
+.binfo{background:var(--info-bg);color:var(--info)}.bpurp{background:var(--purp-bg);color:var(--purp)}
+.status{font-size:13px;padding:10px 14px;border-radius:var(--radius);margin-bottom:14px}
+.sinfo{background:var(--info-bg);color:var(--info)}.serr{background:var(--err-bg);color:var(--err)}
+.sok{background:var(--ok-bg);color:var(--ok)}.swarn{background:var(--warn-bg);color:var(--warn)}
+.step{display:flex;gap:12px;margin-bottom:12px;align-items:flex-start}
+.stepn{width:24px;height:24px;border-radius:50%;background:var(--bg2);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--text);flex-shrink:0;margin-top:1px}
+.step p{font-size:13px;color:var(--text);line-height:1.7}
+.step a{color:var(--info)}.step code{font-family:monospace;font-size:12px;background:var(--bg2);padding:1px 6px;border-radius:4px;border:0.5px solid var(--border)}
+.tbl{width:100%;font-size:12px;border-collapse:collapse}
+.tbl th{font-size:11px;font-weight:600;color:var(--text2);text-align:left;padding:7px 10px;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:.3px}
+.tbl td{padding:7px 10px;border-bottom:0.5px solid var(--border);color:var(--text);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover td{background:var(--bg2)}
+.tbl-section td{font-size:11px;font-weight:600;color:var(--text2);background:var(--bg2);text-transform:uppercase;letter-spacing:.4px;padding:5px 10px}
+.add-row{display:flex;gap:8px;margin-top:12px;align-items:flex-end;flex-wrap:wrap}
+.add-row .fg{flex:1;min-width:110px}
+.suggest-box{background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);position:absolute;z-index:50;width:100%;max-height:180px;overflow-y:auto;top:2px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+.suggest-item{padding:7px 12px;font-size:12px;cursor:pointer;color:var(--text)}
+.suggest-item:hover{background:var(--bg2)}
+.day-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.dtab{font-size:12px;padding:5px 12px;border-radius:20px;border:0.5px solid var(--border2);background:var(--bg);cursor:pointer;color:var(--text2);font-weight:500}
+.dtab.active{background:var(--text);color:var(--bg);border-color:var(--text)}
+.loc-tabs{display:flex;gap:6px;margin-bottom:12px}
+.ltab{font-size:12px;padding:4px 11px;border-radius:20px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;color:var(--text2)}
+.ltab.active{background:var(--info-bg);color:var(--info);border-color:var(--info)}
+.ctrl-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.pctctl{display:flex;align-items:center;gap:10px}
+.pctctl label{font-size:13px;color:var(--text2);white-space:nowrap}
+.pctval{font-size:15px;font-weight:600;min-width:44px;color:var(--text)}
+.output{background:var(--bg2);border-radius:var(--radius);padding:14px;font-family:monospace;font-size:11px;line-height:2;color:var(--text);white-space:pre;overflow-x:auto;max-height:420px;overflow-y:auto;border:0.5px solid var(--border)}
+.sec-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin:16px 0 8px}
+.catalog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:5px;max-height:240px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg2)}
+.cat-item{font-size:12px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border);color:var(--text2);background:var(--bg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid var(--border2);border-top-color:var(--text);border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle;margin-right:5px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:20px;color:var(--text2);font-size:13px}
+.info-box{background:var(--bg2);border-radius:var(--radius);padding:14px 16px;font-size:13px;color:var(--text2);line-height:1.7;border:0.5px solid var(--border)}
+@media(max-width:600px){.row2,.row3{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div class="shell">
 
-<header>
-  <div>
-    <h1>Bakery Production Planner</h1>
-    <p>Square → ingredient logic → weekly bake numbers → paste to Excel</p>
-  </div>
-  <div class="header-actions">
-    <button class="btn btnsm" onclick="exportSettings()" title="Export your settings to share with teammates">&#8595; Export settings</button>
-    <button class="btn btnsm" onclick="document.getElementById('import-file').click()" title="Import settings from a teammate">&#8593; Import settings</button>
-    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importSettings(this)"/>
-  </div>
-</header>
-
-<div class="tabs">
-  <button class="tab active" onclick="showTab('setup',this)">1. Setup</button>
-  <button class="tab" onclick="showTab('catalog',this)">2. Catalog</button>
-  <button class="tab" onclick="showTab('recipes',this)">3. Relationships</button>
-  <button class="tab" onclick="showTab('oos',this)">4. Out of stock</button>
-  <button class="tab" onclick="showTab('generate',this)">5. Generate</button>
+<div id="loading-screen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text2)">
+  <span class="spin"></span> Loading…
 </div>
 
-<div class="content">
-
-<!-- SETUP -->
-<div id="tab-setup" class="panel active">
-  <div class="card">
-    <div class="card-title">Square connection <span class="badge bwarn">stored only in your browser</span></div>
-    <div id="api-status"></div>
-    <div class="fg" style="margin-bottom:12px">
-      <label>Cloudflare Worker URL <span class="badge binfo">your proxy</span></label>
-      <input type="text" id="proxy-url" placeholder="https://bakery-proxy.yourname.workers.dev" oninput="save('proxy_url',this.value)"/>
-      <span style="font-size:11px;color:var(--text2);margin-top:3px">See setup instructions below for how to get this URL.</span>
-    </div>
-    <div class="fg" style="margin-bottom:12px">
-      <label>Production access token</label>
-      <input type="password" id="sq-token" placeholder="EAAAl..." oninput="save('sq_token',this.value)"/>
-    </div>
-    <div class="row3">
-      <div class="fg"><label>Redmond location ID</label><input type="text" id="loc-red" placeholder="LXXXXXXXX" oninput="save('loc_red',this.value)"/></div>
-      <div class="fg"><label>Bellevue location ID</label><input type="text" id="loc-bel" placeholder="LXXXXXXXX" oninput="save('loc_bel',this.value)"/></div>
-      <div class="fg"><label>Woodinville location ID</label><input type="text" id="loc-wood" placeholder="LXXXXXXXX" oninput="save('loc_wood',this.value)"/></div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btnp" onclick="testConn()">Test connection</button>
-      <button class="btn" onclick="goTab('catalog')">Next: sync catalog &rarr;</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Step A &mdash; Set up your Cloudflare proxy (one time only)</div>
-    <div class="hint">Square's API blocks direct browser requests for security. A free Cloudflare Worker acts as a middleman. This takes about 5 minutes and you never need to touch it again.</div>
-    <div class="step"><div class="stepn">1</div><p>Go to <a href="https://workers.cloudflare.com" target="_blank">workers.cloudflare.com</a> and create a free account (or sign in).</p></div>
-    <div class="step"><div class="stepn">2</div><p>Click <strong>Create application</strong> &rarr; <strong>Create Worker</strong>. Give it any name like <code>bakery-proxy</code>. Click <strong>Deploy</strong>.</p></div>
-    <div class="step"><div class="stepn">3</div><p>Click <strong>Edit code</strong>. Select all the default code and delete it. Paste in the contents of the <code>cloudflare-worker.js</code> file you downloaded. Click <strong>Deploy</strong>.</p></div>
-    <div class="step"><div class="stepn">4</div><p>Copy the Worker URL shown at the top (looks like <code>https://bakery-proxy.yourname.workers.dev</code>). Paste it into the <strong>Cloudflare Worker URL</strong> field above.</p></div>
-  </div>
-  <div class="card">
-    <div class="card-title">Step B &mdash; Get your Square credentials</div>
-    <div class="step"><div class="stepn">1</div><p>Go to <a href="https://developer.squareup.com" target="_blank">developer.squareup.com</a> and sign in with your Square account.</p></div>
-    <div class="step"><div class="stepn">2</div><p>Click <strong>+</strong> to create a new application &mdash; name it &ldquo;Bakery Planner&rdquo;. Click <strong>Save</strong>.</p></div>
-    <div class="step"><div class="stepn">3</div><p>Open your app &rarr; click the <strong>Production</strong> tab &rarr; copy the <strong>Production Access Token</strong> and paste it above.</p></div>
-    <div class="step"><div class="stepn">4</div><p>For location IDs: in your <a href="https://squareup.com/dashboard" target="_blank">Square Dashboard</a>, go to <strong>Account &amp; Settings &rarr; Locations</strong>. Each location shows an ID starting with <code>L</code>.</p></div>
-    <div class="step"><div class="stepn">5</div><p>Hit <strong>Test connection</strong> &mdash; if it works, move to the <strong>Catalog</strong> tab to sync your menu items.</p></div>
-    <div class="step"><div class="stepn">6</div><p>To share with teammates: once you&rsquo;ve set up your relationships, use <strong>Export settings</strong> (top right) to save a config file. Teammates open this file and hit <strong>Import settings</strong> &mdash; they only need to add their own Square token.</p></div>
+<div id="auth-screen" class="auth-wrap" style="display:none">
+  <div class="auth-card">
+    <div style="font-size:20px;font-weight:600;margin-bottom:4px">Bakery Production Planner</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:24px">Sign in with your team account</div>
+    <div id="auth-status"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Email</label><input type="email" id="auth-email" onkeydown="if(event.key==='Enter')signIn()"/></div>
+    <div class="fg" style="margin-bottom:16px"><label>Password</label><input type="password" id="auth-password" onkeydown="if(event.key==='Enter')signIn()"/></div>
+    <button class="btn btnp" style="width:100%" onclick="signIn()">Sign in</button>
+    <div style="margin-top:12px;font-size:12px;color:var(--text2);text-align:center">Same account as the ordering system.</div>
   </div>
 </div>
 
-<!-- CATALOG -->
-<div id="tab-catalog" class="panel">
-  <div class="card">
-    <div class="card-title">Square catalog sync</div>
-    <div class="hint">Pull your live menu items from Square so you can use real item names when building ingredient relationships. Re-sync any time your menu changes.</div>
-    <div id="catalog-status"></div>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-      <button class="btn btnp" onclick="syncCatalog()">Sync from Square</button>
-      <span id="catalog-count" style="font-size:13px;color:var(--text2)"></span>
+<div id="app" style="display:none">
+  <header>
+    <div><h1>Bakery Production Planner</h1><p>Square → ingredient logic → weekly bake numbers → paste to Excel</p></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="hdr-user" style="font-size:12px;color:var(--text2)"></span>
+      <button class="btn btnsm" onclick="signOut()">Sign out</button>
     </div>
-    <div id="catalog-grid" style="display:none" class="catalog-grid"></div>
+  </header>
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('setup',this)">1. Setup</button>
+    <button class="tab" onclick="showTab('catalog',this)">2. Catalog</button>
+    <button class="tab" onclick="showTab('recipes',this)">3. Relationships</button>
+    <button class="tab" onclick="showTab('oos',this)">4. Out of stock</button>
+    <button class="tab" onclick="showTab('generate',this)">5. Generate</button>
   </div>
+  <div class="content">
 
-  <div class="card">
-    <div class="card-title">Production items <span class="badge bpurp">what your kitchen actually bakes</span></div>
-    <div class="hint">Add every item your bakery produces &mdash; baguettes, croissants, loaves, etc. Mark each as Retail (sold direct) or Kitchen (ingredient-only, gets the buffer). Menu items in the Relationships tab will draw from these.</div>
-    <div id="prod-items-list"></div>
-    <div class="add-row">
-      <div class="fg"><label>Production item name</label><input type="text" id="new-prod" placeholder="e.g. Baguette" onkeydown="if(event.key==='Enter')addProdItem()"/></div>
-      <div class="fg" style="max-width:130px"><label>Section</label>
-        <select id="new-prod-sec">
-          <option value="retail">Retail</option>
-          <option value="kitchen">Kitchen</option>
-        </select>
+    <!-- SETUP -->
+    <div id="tab-setup" class="panel active">
+      <div class="card">
+        <div class="card-title">Square connection <span class="badge bwarn">stored in shared config</span></div>
+        <div id="api-status"></div>
+        <div class="fg" style="margin-bottom:12px"><label>Proxy URL (Val Town or Cloudflare Worker)</label><input type="text" id="proxy-url" placeholder="https://yourname.web.val.run" oninput="debounceSave()"/></div>
+        <div class="fg" style="margin-bottom:12px"><label>Square production access token <span class="badge bwarn">personal — not shared</span></label><input type="password" id="sq-token" placeholder="EAAAl…" oninput="saveLocalToken()"/></div>
+        <div class="row3">
+          <div class="fg"><label>Redmond location ID</label><input type="text" id="loc-red" placeholder="LXXXXXXXX" oninput="debounceSave()"/></div>
+          <div class="fg"><label>Bellevue location ID</label><input type="text" id="loc-bel" placeholder="LXXXXXXXX" oninput="debounceSave()"/></div>
+          <div class="fg"><label>Woodinville location ID</label><input type="text" id="loc-wood" placeholder="LXXXXXXXX" oninput="debounceSave()"/></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btnp" onclick="testConn()">Test connection</button>
+          <button class="btn" onclick="showTab('catalog',document.querySelectorAll('.tab')[1])">Next →</button>
+        </div>
       </div>
-      <button class="btn btnp" style="align-self:flex-end" onclick="addProdItem()">+ Add</button>
-    </div>
-  </div>
-</div>
-
-<!-- RELATIONSHIPS -->
-<div id="tab-recipes" class="panel">
-  <div class="card">
-    <div class="card-title">Ingredient relationships</div>
-    <div class="hint">For each menu item that uses a production item, enter how much it uses. Example: &ldquo;Jambon Beurre&rdquo; uses 0.5 of &ldquo;Baguette&rdquo;. The tool sums all relevant menu sales and converts to total production units needed.</div>
-    <div id="rel-list"></div>
-    <div class="sec-label">Add relationship</div>
-    <div class="add-row">
-      <div class="fg" style="position:relative">
-        <label>Menu item (from Square catalog)</label>
-        <input type="text" id="rel-menu" placeholder="Start typing to search..." oninput="filterSuggestions(this.value)" autocomplete="off" onblur="setTimeout(()=>hideSuggestions(),150)"/>
-        <div id="rel-suggestions" style="display:none;position:absolute;width:100%;top:100%;left:0;z-index:50"></div>
+      <div class="card">
+        <div class="card-title">How to get your Square credentials</div>
+        <div class="step"><div class="stepn">1</div><p>Go to <a href="https://developer.squareup.com" target="_blank">developer.squareup.com</a> and sign in.</p></div>
+        <div class="step"><div class="stepn">2</div><p>Create a new application → open it → click the <strong>Production</strong> tab → copy the <strong>Production Access Token</strong>. This is personal — paste it above but it won't be shared with teammates.</p></div>
+        <div class="step"><div class="stepn">3</div><p>Location IDs: <strong>Square Dashboard → Account &amp; Settings → Locations</strong>. Each starts with <code>L</code>. These are shared.</p></div>
+        <div class="step"><div class="stepn">4</div><p>For the proxy URL, see the Val Town setup from the original deployment. Paste the same URL here.</p></div>
       </div>
-      <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px;white-space:nowrap">uses</div>
-      <div class="fg fg-sm"><label>Qty</label><input type="number" id="rel-qty" placeholder="0.5" step="0.01" min="0.01" style="width:75px"/></div>
-      <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px">of</div>
-      <div class="fg"><label>Production item</label>
-        <select id="rel-prod"><option value="">&#8212; select &#8212;</option></select>
+    </div>
+
+    <!-- CATALOG -->
+    <div id="tab-catalog" class="panel">
+      <div class="card">
+        <div class="card-title">Square catalog sync</div>
+        <div class="hint">Sync pulls your live menu items from Square. Results are shared with your team automatically.</div>
+        <div id="catalog-status"></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <button class="btn btnp" onclick="syncCatalog()">Sync from Square</button>
+          <span id="catalog-count" style="font-size:13px;color:var(--text2)"></span>
+        </div>
+        <div id="catalog-grid" style="display:none" class="catalog-grid"></div>
       </div>
-      <button class="btn btnp" style="align-self:flex-end" onclick="addRel()">+ Add</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Kitchen buffer</div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:13px;color:var(--text2)">Kitchen items automatically get a</span>
-      <input type="number" id="kitchen-buffer" value="5" min="0" max="50" style="width:65px;font-size:13px" oninput="save('kitchen_buffer',this.value)"/>
-      <span style="font-size:13px;color:var(--text2)">% buffer added on top of calculated need.</span>
-    </div>
-  </div>
-</div>
-
-<!-- OOS -->
-<div id="tab-oos" class="panel">
-  <div class="card">
-    <div class="card-title">Out-of-stock events</div>
-    <div class="hint">If an item sold out mid-day last week, log it here by day and location. The tool fetches that item&rsquo;s actual hourly sales curve from Square for that day and uses it to estimate missed sales &mdash; so if baguettes sell mostly in the morning, it won&rsquo;t over-credit afternoon hours.</div>
-    <div class="day-tabs" id="oos-days"></div>
-    <div class="loc-tabs" id="oos-locs"></div>
-    <div id="oos-list"></div>
-    <button class="btn" style="margin-top:12px" onclick="addOosEntry()">+ Add item</button>
-  </div>
-  <div class="info-box" style="margin-top:0">
-    <strong style="color:var(--text)">How the hourly curve works:</strong> The tool looks at that specific item&rsquo;s actual sales by hour from Square data. It calculates what fraction of the day&rsquo;s sales typically happen during the hours after the item sold out, then applies that fraction to estimate missed units. If baguettes sell 80% before noon and sold out at 10am, only the remaining pre-noon hour gets credited &mdash; not a full afternoon.
-  </div>
-</div>
-
-<!-- GENERATE -->
-<div id="tab-generate" class="panel">
-  <div class="card">
-    <div class="card-title">Generation settings</div>
-    <div class="ctrl-row">
-      <div class="pctctl">
-        <label>Overall adjustment:</label>
-        <input type="range" min="50" max="200" value="100" step="5" id="pct-slider" oninput="document.getElementById('pct-val').textContent=this.value+'%'" style="width:140px"/>
-        <span class="pctval" id="pct-val">100%</span>
+      <div class="card">
+        <div class="card-title">Production items <span class="badge bpurp">what your kitchen bakes</span></div>
+        <div class="hint">Add every item your bakery produces. Mark as Retail or Kitchen — kitchen items get the buffer applied.</div>
+        <div id="prod-items-list"></div>
+        <div class="add-row">
+          <div class="fg"><label>Name</label><input type="text" id="new-prod" placeholder="e.g. Baguette" onkeydown="if(event.key==='Enter')addProdItem()"/></div>
+          <div class="fg" style="max-width:130px"><label>Section</label><select id="new-prod-sec"><option value="retail">Retail</option><option value="kitchen">Kitchen</option></select></div>
+          <button class="btn btnp" style="align-self:flex-end" onclick="addProdItem()">+ Add</button>
+        </div>
       </div>
-      <span style="font-size:12px;color:var(--text2)">Raise or lower all numbers globally (e.g. 110% = 10% buffer on everything)</span>
     </div>
-    <div class="row3">
-      <div class="fg"><label>Week start (Tuesday)</label><input type="date" id="week-start"/></div>
-      <div class="fg"><label>Open time</label><input type="time" id="open-time" value="08:00"/></div>
-      <div class="fg"><label>Close time</label><input type="time" id="close-time" value="17:00"/></div>
+
+    <!-- RELATIONSHIPS -->
+    <div id="tab-recipes" class="panel">
+      <div class="card">
+        <div class="card-title">Ingredient relationships</div>
+        <div class="hint">Define how much of a production item each menu item uses. E.g. "Jambon Beurre Baguette" uses 0.5 of "Baguette". Changes save automatically and are shared with your team.</div>
+        <div id="rel-list"></div>
+        <div class="sec-label">Add relationship</div>
+        <div class="add-row">
+          <div class="fg" style="position:relative">
+            <label>Menu item (from Square catalog)</label>
+            <input type="text" id="rel-menu" placeholder="Start typing…" oninput="filterSuggestions(this.value)" autocomplete="off" onblur="setTimeout(()=>hideSuggestions(),150)"/>
+            <div id="rel-suggestions" style="display:none;position:absolute;width:100%;top:100%;left:0;z-index:50"></div>
+          </div>
+          <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px">uses</div>
+          <div class="fg" style="max-width:80px"><label>Qty</label><input type="number" id="rel-qty" placeholder="0.5" step="0.01" min="0.01"/></div>
+          <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px">of</div>
+          <div class="fg"><label>Production item</label><select id="rel-prod"><option value="">— select —</option></select></div>
+          <button class="btn btnp" style="align-self:flex-end" onclick="addRel()">+ Add</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Kitchen buffer</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--text2)">Kitchen items get a</span>
+          <input type="number" id="kitchen-buffer" value="5" min="0" max="50" style="width:65px;font-size:13px" oninput="debounceSave()"/>
+          <span style="font-size:13px;color:var(--text2)">% buffer added on top.</span>
+        </div>
+      </div>
     </div>
-    <div class="btn-row">
-      <button class="btn btnp" onclick="generate(false)">Pull data &amp; generate</button>
-      <button class="btn" onclick="copyOut()">Copy to clipboard</button>
-      <button class="btn" onclick="generate(true)" title="Shows every item name Square returned — use these exact names in Relationships">&#128269; Debug item names</button>
+
+    <!-- OOS -->
+    <div id="tab-oos" class="panel">
+      <div class="card">
+        <div class="card-title">Out-of-stock events</div>
+        <div class="hint">Log mid-day sellouts per location. The tool uses that item's actual hourly sales curve from Square to estimate missed sales. OOS data is tied to the selected week.</div>
+        <div class="day-tabs" id="oos-days"></div>
+        <div class="loc-tabs" id="oos-locs"></div>
+        <div id="oos-list"></div>
+        <button class="btn" style="margin-top:12px" onclick="addOosEntry()">+ Add item</button>
+      </div>
+      <div class="info-box">
+        <strong style="color:var(--text)">How the hourly curve works:</strong> The tool fetches that item's actual sales by hour from Square. It calculates what fraction of the day's sales typically happen after the sellout time, then adds that fraction as estimated missed units.
+      </div>
     </div>
-  </div>
-  <div id="gen-status"></div>
-  <div id="debug-wrap" style="display:none">
-    <div class="sec-label">Debug — exact item names Square returned in orders (Tuesday, Redmond only)</div>
-    <div class="output" id="debug-area" style="max-height:260px"></div>
-  </div>
-  <div id="out-wrap" style="display:none">
-    <div class="sec-label">Paste-ready output &mdash; tab-separated, matches your Excel column layout</div>
-    <div class="output" id="out-area"></div>
+
+    <!-- GENERATE -->
+    <div id="tab-generate" class="panel">
+      <div class="card">
+        <div class="card-title">Generation settings</div>
+        <div class="ctrl-row">
+          <div class="pctctl">
+            <label>Overall adjustment:</label>
+            <input type="range" min="50" max="200" value="100" step="5" id="pct-slider" oninput="document.getElementById('pct-val').textContent=this.value+'%'" style="width:140px"/>
+            <span class="pctval" id="pct-val">100%</span>
+          </div>
+          <span style="font-size:12px;color:var(--text2)">Raise or lower all numbers globally</span>
+        </div>
+        <div class="row3">
+          <div class="fg"><label>Most recent week start (Tuesday)</label><input type="date" id="week-start"/></div>
+          <div class="fg"><label>Weeks to average</label>
+            <select id="num-weeks">
+              <option value="1">1 week</option>
+              <option value="2" selected>2 weeks</option>
+              <option value="3">3 weeks</option>
+              <option value="4">4 weeks</option>
+            </select>
+          </div>
+          <div class="fg"><label>Outlier threshold</label>
+            <select id="outlier-pct">
+              <option value="0">Off</option>
+              <option value="15">15%</option>
+              <option value="20" selected>20%</option>
+              <option value="25">25%</option>
+            </select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="fg"><label>Open time</label><input type="time" id="open-time" value="08:00" oninput="debounceSave()"/></div>
+          <div class="fg"><label>Close time</label><input type="time" id="close-time" value="17:00" oninput="debounceSave()"/></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btnp" onclick="generate(false)">Pull data &amp; generate</button>
+          <button class="btn" onclick="copyOut()">Copy to clipboard</button>
+          <button class="btn" onclick="generate(true)" title="Show exact Square item names for debugging">Debug item names</button>
+        </div>
+      </div>
+      <div id="gen-status"></div>
+      <div id="debug-wrap" style="display:none">
+        <div class="sec-label">Debug — exact Square item names (Tuesday, Redmond)</div>
+        <div class="output" id="debug-area" style="max-height:260px"></div>
+      </div>
+      <div id="out-wrap" style="display:none">
+        <div class="sec-label">Paste-ready output — tab-separated, matches your Excel layout. Total columns are left blank so Excel formulas recalculate.</div>
+        <div class="output" id="out-area"></div>
+      </div>
+    </div>
+
   </div>
 </div>
-
-</div><!-- /content -->
-</div><!-- /shell -->
 
 <script>
-const DAYS = ['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
-const LOCS = ['Red','Bel','Wood'];
-const LOC_LABEL = {Red:'Redmond', Bel:'Bellevue', Wood:'Woodinville'};
+// ── CONFIG ────────────────────────────────────────────────
+const SUPABASE_URL = 'https://nfzdrqriiwtaahhzzecz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5memRycXJpaXd0YWFoaHp6ZWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1MzgxNzgsImV4cCI6MjA5NjExNDE3OH0.9p765PNXuPOv3iEOGaglHZQRp5YYXJIGyLYXZQNdyf0';
 const SQ_VER = '2024-01-17';
 
-  // Your Cloudflare Worker URL — set this after deploying the worker
-  function proxyBase() {
-    return (load('proxy_url') || '').replace(/\/$/, '');
-  }
+// ── FIXED ITEM ORDER ──────────────────────────────────────
+const RETAIL_ORDER = [
+  'Chocolate Croissant','Plain Croissant','Ham & Cheese Croissant',
+  'Crème Brulee Cruffin','Almond Cake','Cinnamon Roll','Almond Croissant',
+  'Mocha Croissant','Pain Aux Raisin','Sweet Scone','Savory Scone',
+  'Liege Waffle','Belgian Brownie','Caramel Vanilla Éclair',
+  'Triple Chocolate Éclair','Hazelnut Milk Chocolate Tart','Orange Blossom Éclair',
+  'Pavlova','Pistachio Raspberry Tart','Challah','Country White','Baguette',
+  'Pain de Mie','Quiche (slices)','Chocolate Mousse','Boule'
+];
+const KITCHEN_ORDER = ['Plain Croissant','Country White','Baguette','Pain de Mie','Brioche'];
+const DAYS = ['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
+const LOCS = ['Red','Bel','Wood'];
+const LOC_LABEL = {Red:'Redmond',Bel:'Bellevue',Wood:'Woodinville'};
 
-let catalog = [];
-let prodItems = [];
-let rels = [];
+// ── SUPABASE ──────────────────────────────────────────────
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentUser = null;
+let cfg = { catalog:[], prod_items:[], rels:[], proxy_url:'', open_time:'08:00', close_time:'17:00', kitchen_buffer:5 };
 let oosData = {};
-let curOosDay = 'Tuesday';
-let curOosLoc = 'Red';
+let curOosDay = 'Tuesday', curOosLoc = 'Red';
+let orderQtys = {};
+let saveTimer = null;
 
-function save(k, v) { try { localStorage.setItem('bpp_'+k, v); } catch(e) {} }
-function load(k, def='') { try { return localStorage.getItem('bpp_'+k) || def; } catch(e) { return def; } }
-function saveJ(k, v) { try { localStorage.setItem('bpp_'+k, JSON.stringify(v)); } catch(e) {} }
-function loadJ(k, def) { try { const r = localStorage.getItem('bpp_'+k); return r ? JSON.parse(r) : def; } catch(e) { return def; } }
+// ── AUTH ──────────────────────────────────────────────────
+async function init() {
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ showAuth(); return; }
+  currentUser = session.user;
+  await loadConfig();
+  showApp();
+}
 
-function token() { return document.getElementById('sq-token').value.trim(); }
-function sqH() { return {'Authorization':'Bearer '+token(),'Content-Type':'application/json','Square-Version':SQ_VER}; }
-  function sqUrl(path) {
-    const base = proxyBase();
-    if(!base) { alert('Add your Cloudflare Worker URL in the Setup tab.'); throw new Error('No proxy URL set'); }
-    return base + '/proxy' + path;
+function showAuth(){
+  document.getElementById('loading-screen').style.display='none';
+  document.getElementById('auth-screen').style.display='flex';
+}
+
+function showApp(){
+  document.getElementById('loading-screen').style.display='none';
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('hdr-user').textContent = currentUser.email;
+  applyConfig();
+}
+
+async function signIn(){
+  const email = document.getElementById('auth-email').value.trim();
+  const pass = document.getElementById('auth-password').value;
+  if(!email||!pass){setStatus('auth-status','Enter email and password.','err');return;}
+  setStatus('auth-status','<span class="spin"></span> Signing in…','info');
+  const { error } = await sb.auth.signInWithPassword({email, password:pass});
+  if(error){setStatus('auth-status',error.message,'err');return;}
+  currentUser = (await sb.auth.getSession()).data.session.user;
+  await loadConfig();
+  showApp();
+}
+
+async function signOut(){
+  await sb.auth.signOut();
+  currentUser=null;
+  document.getElementById('app').style.display='none';
+  showAuth();
+}
+
+// ── CONFIG (shared via Supabase) ──────────────────────────
+async function loadConfig(){
+  const { data } = await sb.from('bakery_config').select('*').eq('id','main').single();
+  if(data){
+    cfg.catalog = data.catalog||[];
+    cfg.prod_items = data.prod_items||[];
+    cfg.rels = data.rels||[];
+    cfg.proxy_url = data.proxy_url||'';
+    cfg.open_time = data.open_time||'08:00';
+    cfg.close_time = data.close_time||'17:00';
+    cfg.kitchen_buffer = data.kitchen_buffer||5;
   }
+  // Load OOS for current week from Supabase
+  const weekStart = getDefaultWeekStart();
+  const { data: oosRows } = await sb.from('bakery_oos').select('*').eq('week_start', weekStart);
+  oosData = {};
+  for(const row of oosRows||[]){
+    const key = row.day_name+'|'+row.loc_key;
+    if(!oosData[key]) oosData[key]=[];
+    oosData[key].push({name:row.item_name, time:row.sold_out_time, id:row.id});
+  }
+  // Square token is local-only (personal)
+  try{ document.getElementById('sq-token').value = localStorage.getItem('bpp_sq_token')||''; }catch(e){}
+}
 
-function showTab(name, el) {
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+function saveLocalToken(){
+  try{ localStorage.setItem('bpp_sq_token', document.getElementById('sq-token').value); }catch(e){}
+}
+
+function applyConfig(){
+  document.getElementById('proxy-url').value = cfg.proxy_url;
+  document.getElementById('loc-red').value = cfg.loc_red||'';
+  document.getElementById('loc-bel').value = cfg.loc_bel||'';
+  document.getElementById('loc-wood').value = cfg.loc_wood||'';
+  document.getElementById('kitchen-buffer').value = cfg.kitchen_buffer;
+  document.getElementById('open-time').value = cfg.open_time;
+  document.getElementById('close-time').value = cfg.close_time;
+  renderProdItems(); renderRels(); renderCatalogGrid();
+  renderOosDays(); renderOosLocs(); renderOosList();
+  updateRelProdSelect();
+  if(cfg.catalog.length) document.getElementById('catalog-count').textContent = cfg.catalog.length+' items';
+  // Set default week start
+  document.getElementById('week-start').value = getDefaultWeekStart();
+}
+
+function getDefaultWeekStart(){
+  const today = new Date(); const d = today.getDay();
+  const diff = d===2?7:(d<2?d+5:d-2);
+  const tue = new Date(today); tue.setDate(today.getDate()-diff);
+  return tue.toISOString().split('T')[0];
+}
+
+function debounceSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveConfig, 800);
+}
+
+async function saveConfig(){
+  const update = {
+    proxy_url: document.getElementById('proxy-url').value.trim(),
+    loc_red: document.getElementById('loc-red').value.trim(),
+    loc_bel: document.getElementById('loc-bel').value.trim(),
+    loc_wood: document.getElementById('loc-wood').value.trim(),
+    open_time: document.getElementById('open-time').value,
+    close_time: document.getElementById('close-time').value,
+    kitchen_buffer: parseFloat(document.getElementById('kitchen-buffer').value)||5,
+    catalog: cfg.catalog,
+    prod_items: cfg.prod_items,
+    rels: cfg.rels,
+    updated_at: new Date().toISOString(),
+    updated_by: currentUser.id
+  };
+  Object.assign(cfg, update);
+  await sb.from('bakery_config').upsert({id:'main',...update});
+}
+
+async function saveConfigField(field, value){
+  cfg[field] = value;
+  await sb.from('bakery_config').update({[field]:value, updated_at:new Date().toISOString(), updated_by:currentUser.id}).eq('id','main');
+}
+
+// ── TABS ──────────────────────────────────────────────────
+function showTab(name, el){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   el.classList.add('active');
 }
-function goTab(name) {
-  const tabs = document.querySelectorAll('.tab');
-  const panels = ['setup','catalog','recipes','oos','generate'];
-  const idx = panels.indexOf(name);
-  if(idx >= 0) showTab(name, tabs[idx]);
+
+function setStatus(id, msg, type){
+  const el=document.getElementById(id);
+  if(el) el.innerHTML=msg?`<div class="status s${type}">${msg}</div>`:'';
 }
 
-function setStatus(id, msg, type) {
-  document.getElementById(id).innerHTML = msg ? `<div class="status s${type}">${msg}</div>` : '';
+// ── SQUARE ────────────────────────────────────────────────
+function token(){ return document.getElementById('sq-token').value.trim(); }
+function proxyBase(){ return (document.getElementById('proxy-url').value.trim()||cfg.proxy_url||'').replace(/\/$/,''); }
+function sqUrl(path){
+  const base=proxyBase();
+  if(!base){ alert('Add your proxy URL in the Setup tab.'); throw new Error('No proxy URL'); }
+  return base+'/proxy'+path;
+}
+function sqH(){ return {'Authorization':'Bearer '+token(),'Content-Type':'application/json','Square-Version':SQ_VER}; }
+
+async function testConn(){
+  if(!token()){setStatus('api-status','Enter your Square token first.','err');return;}
+  setStatus('api-status','<span class="spin"></span> Connecting…','info');
+  try{
+    const r=await fetch(sqUrl('/v2/locations'),{headers:sqH()});
+    const d=await r.json();
+    if(d.locations){
+      setStatus('api-status','Connected. Locations: '+d.locations.map(l=>`${l.name} (${l.id})`).join(' · '),'ok');
+    } else { setStatus('api-status','Error: '+(d.errors?.[0]?.detail||'Unknown'),'err'); }
+  } catch(e){ setStatus('api-status','Connection failed: '+e.message,'err'); }
 }
 
-function loadAll() {
-  document.getElementById('sq-token').value = load('sq_token');
-  document.getElementById('proxy-url').value = load('proxy_url');
-  document.getElementById('loc-red').value = load('loc_red');
-  document.getElementById('loc-bel').value = load('loc_bel');
-  document.getElementById('loc-wood').value = load('loc_wood');
-  document.getElementById('kitchen-buffer').value = load('kitchen_buffer', '5');
-  catalog = loadJ('catalog', []);
-  prodItems = loadJ('prod_items', []);
-  rels = loadJ('rels', []);
-  oosData = loadJ('oos_data', {});
-
-  const today = new Date();
-  const d = today.getDay();
-  const diff = d === 2 ? 7 : (d < 2 ? d + 5 : d - 2);
-  const tue = new Date(today);
-  tue.setDate(today.getDate() - diff);
-  document.getElementById('week-start').value = tue.toISOString().split('T')[0];
-
-  renderProdItems();
-  renderRels();
-  renderCatalogGrid();
-  renderOosDays();
-  renderOosLocs();
-  renderOosList();
-  updateRelProdSelect();
-  if(catalog.length) document.getElementById('catalog-count').textContent = catalog.length + ' items loaded from last sync';
-}
-
-// --- EXPORT / IMPORT ---
-function exportSettings() {
-  const cfg = {
-    version: 1,
-    catalog: catalog,
-    prodItems: prodItems,
-    rels: rels,
-    oosData: oosData,
-    kitchenBuffer: load('kitchen_buffer','5'),
-    proxyUrl: load('proxy_url')
-  };
-  const blob = new Blob([JSON.stringify(cfg, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'bakery-planner-settings.json';
-  a.click();
-}
-
-function importSettings(input) {
-  const file = input.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const cfg = JSON.parse(e.target.result);
-      if(!cfg.version) throw new Error('Unrecognized file format');
-      if(cfg.catalog) { catalog = cfg.catalog; saveJ('catalog', catalog); }
-      if(cfg.prodItems) { prodItems = cfg.prodItems; saveJ('prod_items', prodItems); }
-      if(cfg.rels) { rels = cfg.rels; saveJ('rels', rels); }
-      if(cfg.oosData) { oosData = cfg.oosData; saveJ('oos_data', oosData); }
-      if(cfg.kitchenBuffer) { save('kitchen_buffer', cfg.kitchenBuffer); document.getElementById('kitchen-buffer').value = cfg.kitchenBuffer; }
-      if(cfg.proxyUrl) { save('proxy_url', cfg.proxyUrl); document.getElementById('proxy-url').value = cfg.proxyUrl; }
-      renderProdItems(); renderRels(); renderCatalogGrid(); renderOosDays(); renderOosLocs(); renderOosList(); updateRelProdSelect();
-      if(catalog.length) document.getElementById('catalog-count').textContent = catalog.length + ' items loaded';
-      alert('Settings imported successfully! Add your Square token in the Setup tab to connect.');
-    } catch(err) {
-      alert('Import failed: ' + err.message);
-    }
-  };
-  reader.readAsText(file);
-  input.value = '';
-}
-
-// --- CONNECTION ---
-async function testConn() {
-  if(!token()) { setStatus('api-status','Enter your access token first.','err'); return; }
-  setStatus('api-status','<span class="spin"></span> Connecting to Square…','info');
-  try {
-    const r = await fetch(sqUrl('/v2/locations'), {headers: sqH()});
-    const d = await r.json();
-    if(d.locations) {
-      const names = d.locations.map(l => `${l.name} (${l.id})`).join(' &bull; ');
-      setStatus('api-status','&#10003; Connected. Locations: ' + names, 'ok');
-    } else {
-      setStatus('api-status','Error: ' + (d.errors?.[0]?.detail || 'Unknown error'), 'err');
-    }
-  } catch(e) { setStatus('api-status','Connection failed — check your token and try again.','err'); }
-}
-
-// --- CATALOG SYNC ---
-async function syncCatalog() {
-  if(!token()) { setStatus('catalog-status','Enter your access token in Setup first.','err'); return; }
-  setStatus('catalog-status','<span class="spin"></span> Fetching catalog from Square…','info');
-  try {
-    let items = [], cursor = null;
-    do {
-      const url = sqUrl('/v2/catalog/list?types=ITEM') + (cursor ? '&cursor='+cursor : '');
-      const r = await fetch(url, {headers: sqH()});
-      const d = await r.json();
-      if(d.errors) { setStatus('catalog-status','Error: '+d.errors[0].detail,'err'); return; }
-      if(d.objects) {
-        for(const obj of d.objects) {
-          if(obj.type === 'ITEM' && obj.item_data) {
-            const base = obj.item_data.name;
-            if(obj.item_data.variations && obj.item_data.variations.length > 1) {
-              for(const v of obj.item_data.variations) {
-                const vname = v.item_variation_data?.name;
-                items.push(vname && vname.toLowerCase() !== 'regular' ? `${base} — ${vname}` : base);
+// ── CATALOG SYNC ──────────────────────────────────────────
+async function syncCatalog(){
+  if(!token()){setStatus('catalog-status','Enter your Square token first.','err');return;}
+  setStatus('catalog-status','<span class="spin"></span> Fetching catalog…','info');
+  try{
+    let items=[],cursor=null;
+    do{
+      const url=sqUrl('/v2/catalog/list?types=ITEM')+(cursor?'&cursor='+cursor:'');
+      const r=await fetch(url,{headers:sqH()});
+      const d=await r.json();
+      if(d.errors){setStatus('catalog-status','Error: '+d.errors[0].detail,'err');return;}
+      if(d.objects){
+        for(const obj of d.objects){
+          if(obj.type==='ITEM'&&obj.item_data){
+            const base=obj.item_data.name;
+            if(obj.item_data.variations&&obj.item_data.variations.length>1){
+              for(const v of obj.item_data.variations){
+                const vn=v.item_variation_data?.name;
+                items.push(vn&&vn.toLowerCase()!=='regular'?`${base} — ${vn}`:base);
               }
-            } else {
-              items.push(base);
-            }
+            } else { items.push(base); }
           }
         }
       }
-      cursor = d.cursor || null;
+      cursor=d.cursor||null;
     } while(cursor);
-    catalog = [...new Set(items)].sort();
-    saveJ('catalog', catalog);
+    cfg.catalog=[...new Set(items)].sort();
+    await saveConfigField('catalog', cfg.catalog);
     renderCatalogGrid();
-    document.getElementById('catalog-count').textContent = catalog.length + ' items synced';
-    setStatus('catalog-status','&#10003; Catalog synced — ' + catalog.length + ' items. Now add your production items below.','ok');
-  } catch(e) { setStatus('catalog-status','Failed: '+e.message,'err'); }
+    document.getElementById('catalog-count').textContent=cfg.catalog.length+' items synced';
+    setStatus('catalog-status','Synced — '+cfg.catalog.length+' items.','ok');
+  } catch(e){ setStatus('catalog-status','Failed: '+e.message,'err'); }
 }
 
-function renderCatalogGrid() {
-  const g = document.getElementById('catalog-grid');
-  if(!catalog.length) { g.style.display='none'; return; }
-  g.style.display = 'grid';
-  g.innerHTML = catalog.map(n => `<div class="cat-item" title="${n}">${n.length>30 ? n.slice(0,29)+'…' : n}</div>`).join('');
+function renderCatalogGrid(){
+  const g=document.getElementById('catalog-grid');
+  if(!cfg.catalog.length){g.style.display='none';return;}
+  g.style.display='grid';
+  g.innerHTML=cfg.catalog.map(n=>`<div class="cat-item" title="${n}">${n.length>30?n.slice(0,29)+'…':n}</div>`).join('');
 }
 
-// --- PRODUCTION ITEMS ---
-function addProdItem() {
-  const name = document.getElementById('new-prod').value.trim();
-  const sec = document.getElementById('new-prod-sec').value;
-  if(!name) return;
-  if(prodItems.find(p => p.name.toLowerCase() === name.toLowerCase())) { alert('That production item already exists.'); return; }
-  prodItems.push({name, sec});
-  saveJ('prod_items', prodItems);
-  document.getElementById('new-prod').value = '';
-  renderProdItems();
-  updateRelProdSelect();
+// ── PRODUCTION ITEMS ──────────────────────────────────────
+function addProdItem(){
+  const name=document.getElementById('new-prod').value.trim();
+  const sec=document.getElementById('new-prod-sec').value;
+  if(!name)return;
+  if(cfg.prod_items.find(p=>p.name.toLowerCase()===name.toLowerCase())){alert('Already exists.');return;}
+  cfg.prod_items.push({name,sec});
+  saveConfigField('prod_items',cfg.prod_items);
+  document.getElementById('new-prod').value='';
+  renderProdItems(); updateRelProdSelect();
 }
 
-function removeProdItem(i) {
-  const name = prodItems[i].name;
-  if(!confirm(`Remove "${name}"? Any relationships using it will also be removed.`)) return;
-  prodItems.splice(i, 1);
-  rels = rels.filter(r => r.prod !== name);
-  saveJ('prod_items', prodItems);
-  saveJ('rels', rels);
-  renderProdItems();
-  renderRels();
-  updateRelProdSelect();
+function removeProdItem(i){
+  const name=cfg.prod_items[i].name;
+  if(!confirm(`Remove "${name}"?`))return;
+  cfg.prod_items.splice(i,1);
+  cfg.rels=cfg.rels.filter(r=>r.prod!==name);
+  saveConfigField('prod_items',cfg.prod_items);
+  saveConfigField('rels',cfg.rels);
+  renderProdItems(); renderRels(); updateRelProdSelect();
 }
 
-function renderProdItems() {
-  const el = document.getElementById('prod-items-list');
-  if(!prodItems.length) { el.innerHTML='<p class="empty">No production items yet. Add them below.</p>'; return; }
-  const retail = prodItems.filter(p => p.sec==='retail');
-  const kitchen = prodItems.filter(p => p.sec==='kitchen');
-  let html = '<table class="tbl"><thead><tr><th>Production item</th><th>Section</th><th>Linked menu items</th><th></th></tr></thead><tbody>';
-  const row = p => {
-    const i = prodItems.indexOf(p);
-    const count = rels.filter(r => r.prod === p.name).length;
-    return `<tr><td><strong>${p.name}</strong></td><td><span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}">${p.sec}</span></td><td style="color:var(--text2)">${count} item${count!==1?'s':''}</td><td><button class="btn btnsm" onclick="removeProdItem(${i})">&#128465;</button></td></tr>`;
+function renderProdItems(){
+  const el=document.getElementById('prod-items-list');
+  if(!cfg.prod_items.length){el.innerHTML='<p class="empty">No production items yet.</p>';return;}
+  const retail=cfg.prod_items.filter(p=>p.sec==='retail');
+  const kitchen=cfg.prod_items.filter(p=>p.sec==='kitchen');
+  let html='<table class="tbl"><thead><tr><th>Production item</th><th>Section</th><th>Relationships</th><th></th></tr></thead><tbody>';
+  const row=p=>{
+    const i=cfg.prod_items.indexOf(p);
+    const count=cfg.rels.filter(r=>r.prod===p.name).length;
+    return`<tr><td><strong>${p.name}</strong></td><td><span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}">${p.sec}</span></td><td style="color:var(--text2)">${count} item${count!==1?'s':''}</td><td><button class="btn btnsm" onclick="removeProdItem(${i})">✕</button></td></tr>`;
   };
-  if(retail.length) html += `<tr class="cat-header"><td colspan="4">Retail</td></tr>${retail.map(row).join('')}`;
-  if(kitchen.length) html += `<tr class="cat-header"><td colspan="4">Kitchen</td></tr>${kitchen.map(row).join('')}`;
-  html += '</tbody></table>';
-  el.innerHTML = html;
+  if(retail.length) html+=`<tr class="tbl-section"><td colspan="4">Retail</td></tr>${retail.map(row).join('')}`;
+  if(kitchen.length) html+=`<tr class="tbl-section"><td colspan="4">Kitchen</td></tr>${kitchen.map(row).join('')}`;
+  html+='</tbody></table>';
+  el.innerHTML=html;
 }
 
-function updateRelProdSelect() {
-  const s = document.getElementById('rel-prod');
-  s.innerHTML = '<option value="">&#8212; select &#8212;</option>' +
-    prodItems.map(p => `<option value="${p.name}">${p.name} (${p.sec})</option>`).join('');
+function updateRelProdSelect(){
+  const s=document.getElementById('rel-prod');
+  s.innerHTML='<option value="">— select —</option>'+cfg.prod_items.map(p=>`<option value="${p.name}">${p.name} (${p.sec})</option>`).join('');
 }
 
-// --- AUTOCOMPLETE ---
-function filterSuggestions(q) {
-  const box = document.getElementById('rel-suggestions');
-  if(!q || q.length < 2) { box.style.display='none'; return; }
-  const matches = catalog.filter(c => c.toLowerCase().includes(q.toLowerCase())).slice(0, 10);
-  if(!matches.length) { box.style.display='none'; return; }
-  box.style.display = 'block';
-  box.innerHTML = `<div class="suggest-box">${matches.map(m => `<div class="suggest-item" onmousedown="pickSug('${m.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">${m}</div>`).join('')}</div>`;
+// ── AUTOCOMPLETE ──────────────────────────────────────────
+function filterSuggestions(q){
+  const box=document.getElementById('rel-suggestions');
+  if(!q||q.length<2){box.style.display='none';return;}
+  const matches=cfg.catalog.filter(c=>c.toLowerCase().includes(q.toLowerCase())).slice(0,10);
+  if(!matches.length){box.style.display='none';return;}
+  box.style.display='block';
+  box.innerHTML=`<div class="suggest-box">${matches.map(m=>`<div class="suggest-item" onmousedown="pickSug('${m.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">${m}</div>`).join('')}</div>`;
 }
-function pickSug(val) {
-  document.getElementById('rel-menu').value = val;
-  document.getElementById('rel-suggestions').style.display = 'none';
-}
-function hideSuggestions() { document.getElementById('rel-suggestions').style.display = 'none'; }
+function pickSug(val){ document.getElementById('rel-menu').value=val; document.getElementById('rel-suggestions').style.display='none'; }
+function hideSuggestions(){ document.getElementById('rel-suggestions').style.display='none'; }
 
-// --- RELATIONSHIPS ---
-function addRel() {
-  const menu = document.getElementById('rel-menu').value.trim();
-  const qty = parseFloat(document.getElementById('rel-qty').value);
-  const prod = document.getElementById('rel-prod').value;
-  if(!menu || !prod || isNaN(qty) || qty <= 0) { alert('Fill in all three fields.'); return; }
-  rels.push({menu, qty, prod});
-  saveJ('rels', rels);
-  document.getElementById('rel-menu').value = '';
-  document.getElementById('rel-qty').value = '';
-  document.getElementById('rel-prod').value = '';
-  renderRels();
-  renderProdItems();
+// ── RELATIONSHIPS ─────────────────────────────────────────
+function addRel(){
+  const menu=document.getElementById('rel-menu').value.trim();
+  const qty=parseFloat(document.getElementById('rel-qty').value);
+  const prod=document.getElementById('rel-prod').value;
+  if(!menu||!prod||isNaN(qty)||qty<=0){alert('Fill in all fields.');return;}
+  cfg.rels.push({menu,qty,prod});
+  saveConfigField('rels',cfg.rels);
+  document.getElementById('rel-menu').value='';
+  document.getElementById('rel-qty').value='';
+  document.getElementById('rel-prod').value='';
+  document.getElementById('rel-suggestions').style.display='none';
+  renderRels(); renderProdItems();
 }
 
-function removeRel(i) {
-  rels.splice(i, 1);
-  saveJ('rels', rels);
-  renderRels();
-  renderProdItems();
-}
+function removeRel(i){ cfg.rels.splice(i,1); saveConfigField('rels',cfg.rels); renderRels(); renderProdItems(); }
 
-function renderRels() {
-  const el = document.getElementById('rel-list');
-  if(!rels.length) { el.innerHTML='<p class="empty">No relationships yet.</p>'; return; }
-  const byProd = {};
-  for(const r of rels) { if(!byProd[r.prod]) byProd[r.prod]=[]; byProd[r.prod].push(r); }
-  let html = '<table class="tbl"><thead><tr><th>Menu item (Square)</th><th>Uses</th><th>Production item</th><th></th></tr></thead><tbody>';
-  for(const [prod, rs] of Object.entries(byProd)) {
-    const pi = prodItems.find(p => p.name === prod);
-    html += `<tr class="cat-header"><td colspan="4">${prod} <span class="badge ${pi?.sec==='kitchen'?'bpurp':'binfo'}">${pi?.sec||''}</span></td></tr>`;
-    html += rs.map(r => {
-      const i = rels.indexOf(r);
-      return `<tr><td>${r.menu}</td><td style="color:var(--text2)">${r.qty}&times;</td><td>${r.prod}</td><td><button class="btn btnsm" onclick="removeRel(${i})">&#128465;</button></td></tr>`;
-    }).join('');
+function renderRels(){
+  const el=document.getElementById('rel-list');
+  if(!cfg.rels.length){el.innerHTML='<p class="empty">No relationships yet.</p>';return;}
+  const byProd={};
+  for(const r of cfg.rels){if(!byProd[r.prod])byProd[r.prod]=[];byProd[r.prod].push(r);}
+  let html='<table class="tbl"><thead><tr><th>Menu item</th><th>Uses</th><th>Production item</th><th></th></tr></thead><tbody>';
+  for(const [prod,rs] of Object.entries(byProd)){
+    const pi=cfg.prod_items.find(p=>p.name===prod);
+    html+=`<tr class="tbl-section"><td colspan="4">${prod} <span class="badge ${pi?.sec==='kitchen'?'bpurp':'binfo'}">${pi?.sec||''}</span></td></tr>`;
+    html+=rs.map(r=>{const i=cfg.rels.indexOf(r);return`<tr><td>${r.menu}</td><td style="color:var(--text2)">${r.qty}×</td><td>${r.prod}</td><td><button class="btn btnsm" onclick="removeRel(${i})">✕</button></td></tr>`;}).join('');
   }
-  html += '</tbody></table>';
-  el.innerHTML = html;
+  html+='</tbody></table>';
+  el.innerHTML=html;
 }
 
-// --- OOS ---
-function renderOosDays() {
-  document.getElementById('oos-days').innerHTML = DAYS.map(d =>
-    `<button class="dtab${d===curOosDay?' active':''}" onclick="switchOosDay('${d}')">${d.slice(0,3)}</button>`).join('');
-}
-function renderOosLocs() {
-  document.getElementById('oos-locs').innerHTML = LOCS.map(l =>
-    `<button class="ltab${l===curOosLoc?' active':''}" onclick="switchOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join('');
-}
-function switchOosDay(d) { curOosDay=d; renderOosDays(); renderOosList(); }
-function switchOosLoc(l) { curOosLoc=l; renderOosLocs(); renderOosList(); }
+// ── OOS ───────────────────────────────────────────────────
+function renderOosDays(){ document.getElementById('oos-days').innerHTML=DAYS.map(d=>`<button class="dtab${d===curOosDay?' active':''}" onclick="switchOosDay('${d}')">${d.slice(0,3)}</button>`).join(''); }
+function renderOosLocs(){ document.getElementById('oos-locs').innerHTML=LOCS.map(l=>`<button class="ltab${l===curOosLoc?' active':''}" onclick="switchOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join(''); }
+function switchOosDay(d){ curOosDay=d; renderOosDays(); renderOosList(); }
+function switchOosLoc(l){ curOosLoc=l; renderOosLocs(); renderOosList(); }
 
-function renderOosList() {
-  const key = curOosDay+'|'+curOosLoc;
-  const items = oosData[key] || [];
-  const el = document.getElementById('oos-list');
-  if(!items.length) { el.innerHTML=`<p class="empty">No out-of-stock events for ${curOosDay} at ${LOC_LABEL[curOosLoc]}.</p>`; return; }
-  el.innerHTML = '<table class="tbl"><thead><tr><th>Production item</th><th>Sold out at</th><th></th></tr></thead><tbody>' +
-    items.map((item, i) =>
-      `<tr><td>${item.name}</td><td><input type="time" value="${item.time}" onchange="updateOosTime('${key}',${i},this.value)" style="width:100px"/></td><td><button class="btn btnsm" onclick="removeOosEntry('${key}',${i})">&#128465;</button></td></tr>`
-    ).join('') + '</tbody></table>';
+function renderOosList(){
+  const key=curOosDay+'|'+curOosLoc;
+  const items=oosData[key]||[];
+  const el=document.getElementById('oos-list');
+  if(!items.length){el.innerHTML=`<p class="empty">No OOS events for ${curOosDay} at ${LOC_LABEL[curOosLoc]}.</p>`;return;}
+  el.innerHTML='<table class="tbl"><thead><tr><th>Item</th><th>Sold out at</th><th></th></tr></thead><tbody>'+
+    items.map((item,i)=>`<tr><td>${item.name}</td><td><input type="time" value="${item.time}" onchange="updateOosTime('${key}',${i},this.value)" style="width:100px"/></td><td><button class="btn btnsm" onclick="removeOosEntry('${key}',${i})">✕</button></td></tr>`).join('')+
+    '</tbody></table>';
 }
 
-function addOosEntry() {
-  const prodNames = prodItems.map(p => p.name);
-  if(!prodNames.length) { alert('Add production items in the Catalog tab first.'); return; }
-  const name = prompt('Which production item sold out?\n\n' + prodNames.join('\n'));
-  if(!name) return;
-  const match = prodNames.find(n => n.toLowerCase() === name.trim().toLowerCase());
-  if(!match) { alert('Please use an exact production item name from the list.'); return; }
-  const key = curOosDay+'|'+curOosLoc;
-  if(!oosData[key]) oosData[key] = [];
-  oosData[key].push({name: match, time: '12:00'});
-  saveJ('oos_data', oosData);
+async function addOosEntry(){
+  const prodNames=cfg.prod_items.map(p=>p.name);
+  if(!prodNames.length){alert('Add production items in the Catalog tab first.');return;}
+  const name=prompt('Which production item sold out?\n\n'+prodNames.join('\n'));
+  if(!name)return;
+  const match=prodNames.find(n=>n.toLowerCase()===name.trim().toLowerCase());
+  if(!match){alert('Use an exact production item name.');return;}
+  const key=curOosDay+'|'+curOosLoc;
+  if(!oosData[key]) oosData[key]=[];
+  const weekStart=document.getElementById('week-start').value||getDefaultWeekStart();
+  const { data:row } = await sb.from('bakery_oos').insert({
+    week_start:weekStart, day_name:curOosDay, loc_key:curOosLoc,
+    item_name:match, sold_out_time:'12:00'
+  }).select().single();
+  oosData[key].push({name:match, time:'12:00', id:row?.id});
   renderOosList();
 }
 
-function updateOosTime(key, i, val) { oosData[key][i].time = val; saveJ('oos_data', oosData); }
-function removeOosEntry(key, i) { oosData[key].splice(i,1); saveJ('oos_data', oosData); renderOosList(); }
+async function updateOosTime(key, i, val){
+  oosData[key][i].time=val;
+  if(oosData[key][i].id){
+    await sb.from('bakery_oos').update({sold_out_time:val}).eq('id',oosData[key][i].id);
+  }
+}
 
-// --- SQUARE DATA ---
-function timeToH(t) { const [h,m] = t.split(':').map(Number); return h + m/60; }
+async function removeOosEntry(key, i){
+  const entry=oosData[key][i];
+  if(entry.id) await sb.from('bakery_oos').delete().eq('id',entry.id);
+  oosData[key].splice(i,1);
+  renderOosList();
+}
 
-async function fetchOrders(locId, startISO, endISO) {
-  let orders = [], cursor = null;
-  do {
-    const body = {
-      location_ids: [locId],
-      query: {
-        filter: {
-          date_time_filter: { created_at: { start_at: startISO, end_at: endISO } },
-          state_filter: { states: ['COMPLETED'] }
-        }
-      }
-    };
-    if(cursor) body.cursor = cursor;
-    const r = await fetch(sqUrl('/v2/orders/search'), {
-      method:'POST', headers: sqH(), body: JSON.stringify(body)
-    });
-    const d = await r.json();
-    if(d.errors) throw new Error(d.errors[0].detail);
-    if(d.orders) orders = orders.concat(d.orders);
-    cursor = d.cursor || null;
-  } while(cursor);
+// ── SQUARE DATA FETCHING ──────────────────────────────────
+function timeToH(t){ const[h,m]=t.split(':').map(Number); return h+m/60; }
+
+async function fetchOrders(locId,startISO,endISO){
+  let orders=[],cursor=null;
+  do{
+    const body={location_ids:[locId],query:{filter:{date_time_filter:{created_at:{start_at:startISO,end_at:endISO}},state_filter:{states:['COMPLETED']}}}};
+    if(cursor)body.cursor=cursor;
+    const r=await fetch(sqUrl('/v2/orders/search'),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.errors)throw new Error(d.errors[0].detail);
+    if(d.orders)orders=orders.concat(d.orders);
+    cursor=d.cursor||null;
+  }while(cursor);
   return orders;
 }
 
-function aggregateOrders(orders) {
-  const counts = {}, hourly = {};
-  for(const o of orders) {
-    if(!o.line_items) continue;
-    const hr = new Date(o.created_at).getHours();
-    for(const li of o.line_items) {
-      // Build a combined name from item name + variation name (e.g. "Avocado Toast Tartine — Fries")
-      const baseName = li.name || '?';
-      const varName = li.variation_name || '';
-      const fullName = varName && varName.toLowerCase() !== 'regular' ? `${baseName} — ${varName}` : baseName;
-      const qty = parseInt(li.quantity) || 1;
-      // Store by full variant name only — lookupSales/lookupHourly handles variant matching
-      counts[fullName] = (counts[fullName]||0) + qty;
-      if(!hourly[fullName]) hourly[fullName] = {};
-      hourly[fullName][hr] = (hourly[fullName][hr]||0) + qty;
+function aggregateOrders(orders){
+  const counts={},hourly={};
+  for(const o of orders){
+    if(!o.line_items)continue;
+    const hr=new Date(o.created_at).getHours();
+    for(const li of o.line_items){
+      const base=li.name||'?';
+      const vn=li.variation_name||'';
+      const full=vn&&vn.toLowerCase()!=='regular'?`${base} — ${vn}`:base;
+      const qty=parseInt(li.quantity)||1;
+      counts[full]=(counts[full]||0)+qty;
+      if(!hourly[full])hourly[full]={};
+      hourly[full][hr]=(hourly[full][hr]||0)+qty;
     }
   }
-  return {counts, hourly};
+  return{counts,hourly};
 }
 
-// Fuzzy lookup: finds sales for a menu item name using flexible matching
-// Tries exact match first, then checks if any Square key contains the rel name or vice versa
-// Strip invisible unicode chars for clean comparison
-function cleanName(s) {
-  return s.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '').trim().toLowerCase();
+function cleanName(s){ return s.replace(/[\u200B-\u200D\uFEFF\u00A0]/g,'').trim().toLowerCase(); }
+function nameMatches(sqKey,relName){
+  const sk=cleanName(sqKey),rn=cleanName(relName);
+  return sk===rn||sk.startsWith(rn+' \u2014 ')||sk.startsWith(rn+' - ');
+}
+function lookupSales(sales,menuName){ let t=0; for(const[k,q]of Object.entries(sales))if(nameMatches(k,menuName))t+=q; return t; }
+function lookupHourly(hourly,menuName){
+  const m={};
+  for(const[k,hrs]of Object.entries(hourly))if(nameMatches(k,menuName))for(const[h,q]of Object.entries(hrs))m[h]=(m[h]||0)+q;
+  return Object.keys(m).length?m:null;
 }
 
-// Match rel name against a Square key:
-// exact match OR key starts with relName + ' — ' (variant separator)
-// Prevents "Baguette" from matching "Farine Chicken Club Baguette" accidentally
-function nameMatches(squareKey, relName) {
-  const sk = cleanName(squareKey);
-  const rn = cleanName(relName);
-  return sk === rn || sk.startsWith(rn + ' — ') || sk.startsWith(rn + ' - ');
-}
-
-function lookupSales(sales, menuName) {
-  let total = 0;
-  for(const [key, qty] of Object.entries(sales)) {
-    if(nameMatches(key, menuName)) total += qty;
+function calcOosAddition(hourlyData,soldOutTime,openTime,closeTime){
+  if(!hourlyData)return 0;
+  const soldOutH=timeToH(soldOutTime),closeH=timeToH(closeTime),openH=timeToH(openTime);
+  if(soldOutH>=closeH)return 0;
+  let total=0,after=0;
+  for(const[h,q]of Object.entries(hourlyData)){
+    const hr=parseInt(h);
+    if(hr>=openH&&hr<closeH){ total+=q; if(hr>=soldOutH)after+=q; }
   }
-  return total;
+  if(total===0)return 0;
+  return Math.ceil(Object.values(hourlyData).reduce((a,b)=>a+b,0)*(after/total));
 }
 
-function lookupHourly(hourly, menuName) {
-  const merged = {};
-  for(const [key, hrs] of Object.entries(hourly)) {
-    if(nameMatches(key, menuName)) {
-      for(const [h, q] of Object.entries(hrs)) merged[h] = (merged[h]||0) + q;
-    }
+// ── GENERATE ─────────────────────────────────────────────
+async function generate(debugMode=false){
+  const tok=token();
+  const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
+  const locBel=document.getElementById('loc-bel').value.trim()||cfg.loc_bel;
+  const locWood=document.getElementById('loc-wood').value.trim()||cfg.loc_wood;
+  const weekStart=document.getElementById('week-start').value;
+  const pct=parseInt(document.getElementById('pct-slider').value)/100;
+  const openTime=document.getElementById('open-time').value;
+  const closeTime=document.getElementById('close-time').value;
+  const kitchenBuffer=1+(parseFloat(document.getElementById('kitchen-buffer').value)||5)/100;
+  const numWeeks=parseInt(document.getElementById('num-weeks').value)||2;
+  const outlierPct=parseInt(document.getElementById('outlier-pct').value)||0;
+
+  if(!tok){setStatus('gen-status','Add your Square token in Setup.','err');return;}
+  if(!weekStart){setStatus('gen-status','Select a week start date.','err');return;}
+  if(!cfg.prod_items.length){setStatus('gen-status','Add production items in the Catalog tab first.','err');return;}
+
+  const locMap={Red:locRed,Bel:locBel,Wood:locWood};
+  const weekStarts=[];
+  for(let w=0;w<numWeeks;w++){
+    const dt=new Date(weekStart+'T00:00:00'); dt.setDate(dt.getDate()-w*7); weekStarts.push(dt);
   }
-  return Object.keys(merged).length ? merged : null;
-}
-
-function calcOosAddition(hourlyData, soldOutTime, openTime, closeTime) {
-  if(!hourlyData) return 0;
-  const soldOutH = timeToH(soldOutTime);
-  const closeH = timeToH(closeTime);
-  const openH = timeToH(openTime);
-  if(soldOutH >= closeH) return 0;
-  let totalSold = 0, afterSold = 0;
-  for(const [h, q] of Object.entries(hourlyData)) {
-    const hr = parseInt(h);
-    if(hr >= openH && hr < closeH) {
-      totalSold += q;
-      if(hr >= soldOutH) afterSold += q;
-    }
-  }
-  if(totalSold === 0) return 0;
-  const actualTotal = Object.values(hourlyData).reduce((a,b)=>a+b,0);
-  return Math.ceil(actualTotal * (afterSold / totalSold));
-}
-
-// --- GENERATE ---
-async function generate(debugMode=false) {
-  const tok = token();
-  const locRed = document.getElementById('loc-red').value.trim();
-  const locBel = document.getElementById('loc-bel').value.trim();
-  const locWood = document.getElementById('loc-wood').value.trim();
-  const weekStart = document.getElementById('week-start').value;
-  const pct = parseInt(document.getElementById('pct-slider').value) / 100;
-  const openTime = document.getElementById('open-time').value;
-  const closeTime = document.getElementById('close-time').value;
-  const kitchenBuffer = 1 + (parseFloat(document.getElementById('kitchen-buffer').value) || 5) / 100;
-
-  if(!tok) { setStatus('gen-status','Add your Square token in the Setup tab.','err'); return; }
-  if(!weekStart) { setStatus('gen-status','Select a week start date.','err'); return; }
-  if(!prodItems.length) { setStatus('gen-status','Add production items in the Catalog tab first.','err'); return; }
-
-  const locMap = {Red: locRed, Bel: locBel, Wood: locWood};
-  const startDt = new Date(weekStart + 'T00:00:00');
 
   setStatus('gen-status','<span class="spin"></span> Starting data fetch…','info');
 
-  try {
-    const salesGrid = {}, hourlyGrid = {};
-    for(const day of DAYS) { salesGrid[day]={}; hourlyGrid[day]={}; for(const l of LOCS) { salesGrid[day][l]={}; hourlyGrid[day][l]={}; } }
-
-    for(const [loc, locId] of Object.entries(locMap)) {
-      if(!locId) continue;
-      for(let di=0; di<7; di++) {
-        const day = DAYS[di];
-        setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} &mdash; ${day} (${di+1}/7)…`,'info');
-        const dayDt = new Date(startDt); dayDt.setDate(startDt.getDate()+di);
-        const nextDt = new Date(dayDt); nextDt.setDate(dayDt.getDate()+1);
-        try {
-          const orders = await fetchOrders(locId, dayDt.toISOString(), nextDt.toISOString());
-          const {counts, hourly} = aggregateOrders(orders);
-          salesGrid[day][loc] = counts;
-          hourlyGrid[day][loc] = hourly;
-        } catch(e) { console.warn('Fetch error', loc, day, e.message); }
+  try{
+    const salesByWeek=[],hourlyByWeek=[];
+    for(let w=0;w<numWeeks;w++){
+      const sg={},hg={};
+      for(const day of DAYS){sg[day]={};hg[day]={};for(const l of LOCS){sg[day][l]={};hg[day][l]={};}}
+      salesByWeek.push(sg);hourlyByWeek.push(hg);
+    }
+    let fetchNum=0;
+    const totalFetches=numWeeks*Object.values(locMap).filter(Boolean).length*7;
+    for(let w=0;w<numWeeks;w++){
+      const startDt=weekStarts[w];
+      const wLabel=w===0?'most recent week':`${w+1} weeks ago`;
+      for(const[loc,locId]of Object.entries(locMap)){
+        if(!locId)continue;
+        for(let di=0;di<7;di++){
+          const day=DAYS[di]; fetchNum++;
+          setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} — ${day} (${wLabel}) [${fetchNum}/${totalFetches}]…`,'info');
+          const dayDt=new Date(startDt); dayDt.setDate(startDt.getDate()+di);
+          const nextDt=new Date(dayDt); nextDt.setDate(dayDt.getDate()+1);
+          try{
+            const orders=await fetchOrders(locId,dayDt.toISOString(),nextDt.toISOString());
+            const{counts,hourly}=aggregateOrders(orders);
+            salesByWeek[w][day][loc]=counts;
+            hourlyByWeek[w][day][loc]=hourly;
+          }catch(e){console.warn('Fetch error',loc,day,e.message);}
+        }
       }
     }
 
-    // Debug mode: show raw Square item names from Tuesday Redmond
-    if(debugMode) {
-      const sample = salesGrid['Tuesday']['Red'];
-      const lines = Object.entries(sample)
-        .sort((a,b) => b[1]-a[1])
-        .map(([name, qty]) => `${qty.toString().padStart(4)}  ${name}`);
-      document.getElementById('debug-area').textContent =
-        lines.length
-          ? 'QTY   ITEM NAME (exact, from Square)\n' + '─'.repeat(60) + '\n' + lines.join('\n')
-          : 'No orders found for Tuesday at Redmond. Check your week start date or location ID.';
-      document.getElementById('debug-wrap').style.display = 'block';
-      document.getElementById('out-wrap').style.display = 'none';
-      setStatus('gen-status','Debug complete — these are the exact names Square sent back. Match them in your Relationships tab.','ok');
+    if(debugMode){
+      const sample=salesByWeek[0]['Tuesday']['Red'];
+      const lines=Object.entries(sample).sort((a,b)=>b[1]-a[1]).map(([name,qty])=>`${qty.toString().padStart(4)}  ${name}`);
+      document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME\n'+'─'.repeat(60)+'\n'+lines.join('\n'):'No orders found for Tuesday at Redmond.';
+      document.getElementById('debug-wrap').style.display='block';
+      document.getElementById('out-wrap').style.display='none';
+      setStatus('gen-status','Debug complete — exact Square item names shown below.','ok');
       return;
     }
 
     setStatus('gen-status','<span class="spin"></span> Calculating production quantities…','info');
 
-    const result = {};
-    for(const pi of prodItems) {
-      result[pi.name] = {sec: pi.sec};
-      for(const day of DAYS) {
-        result[pi.name][day] = {};
-        for(const loc of LOCS) {
-          let qty = 0;
-          const sales = salesGrid[day][loc];
-          const hourly = hourlyGrid[day][loc];
-          const myRels = rels.filter(r => r.prod === pi.name);
+    function calcQtyForWeek(pi,day,loc,weekIdx){
+      const sales=salesByWeek[weekIdx][day][loc];
+      const hourly=hourlyByWeek[weekIdx][day][loc];
+      const myRels=cfg.rels.filter(r=>r.prod===pi.name);
+      let qty=0;
+      for(const rel of myRels){
+        qty+=lookupSales(sales,rel.menu)*rel.qty;
+        const oosKey=day+'|'+loc;
+        const oosEntry=(oosData[oosKey]||[]).find(o=>o.name===pi.name);
+        if(oosEntry) qty+=calcOosAddition(lookupHourly(hourly,rel.menu),oosEntry.time,openTime,closeTime)*rel.qty;
+      }
+      if(myRels.length===0){
+        qty=lookupSales(sales,pi.name);
+        const oosKey=day+'|'+loc;
+        const oosEntry=(oosData[oosKey]||[]).find(o=>o.name===pi.name);
+        if(oosEntry) qty+=calcOosAddition(lookupHourly(hourly,pi.name),oosEntry.time,openTime,closeTime);
+      }
+      return qty;
+    }
 
-          for(const rel of myRels) {
-            const sold = lookupSales(sales, rel.menu);
-            qty += sold * rel.qty;
-            const oosKey = day+'|'+loc;
-            const oosEntry = (oosData[oosKey]||[]).find(o => o.name === pi.name);
-            if(oosEntry) {
-              const addl = calcOosAddition(lookupHourly(hourly, rel.menu), oosEntry.time, openTime, closeTime);
-              qty += addl * rel.qty;
-            }
-          }
+    function smartAverage(values){
+      if(values.length===1)return values[0];
+      if(outlierPct===0)return values.reduce((a,b)=>a+b,0)/values.length;
+      const mean=values.reduce((a,b)=>a+b,0)/values.length;
+      if(mean===0)return 0;
+      const thresh=outlierPct/100;
+      const kept=values.filter(v=>Math.abs(v-mean)/mean<=thresh);
+      const use=kept.length>0?kept:values;
+      return use.reduce((a,b)=>a+b,0)/use.length;
+    }
 
-          // If no relationships defined, fall back to direct sales of this item by name
-          if(myRels.length === 0) {
-            qty = lookupSales(sales, pi.name);
-            const oosKey = day+'|'+loc;
-            const oosEntry = (oosData[oosKey]||[]).find(o => o.name === pi.name);
-            if(oosEntry) qty += calcOosAddition(lookupHourly(hourly, pi.name), oosEntry.time, openTime, closeTime);
-          }
-
-          if(pi.sec === 'kitchen') qty = qty * kitchenBuffer;
-          qty = Math.ceil(qty * pct);
-          result[pi.name][day][loc] = qty;
+    // Calculate results keyed by production item name
+    const result={};
+    for(const pi of cfg.prod_items){
+      result[pi.name]={sec:pi.sec};
+      for(const day of DAYS){
+        result[pi.name][day]={};
+        for(const loc of LOCS){
+          const weekQtys=weekStarts.map((_,w)=>calcQtyForWeek(pi,day,loc,w));
+          let qty=smartAverage(weekQtys);
+          if(pi.sec==='kitchen')qty=qty*kitchenBuffer;
+          qty=Math.ceil(qty*pct);
+          result[pi.name][day][loc]=qty;
         }
       }
     }
 
-    const retailItems = prodItems.filter(p => p.sec==='retail');
-    const kitchenItems = prodItems.filter(p => p.sec==='kitchen');
+    // ── BUILD OUTPUT IN FIXED ORDER, BLANK TOTAL CELLS ───
+    // Header row
+    const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,'']).join('\t')+'\t\t\t\t\t';
 
-    function buildRows(items) {
-      return items.map(pi => {
-        const r = result[pi.name];
-        let totRed=0, totBel=0, totWood=0, totAll=0;
-        const cells = [];
-        for(const day of DAYS) {
-          const rd = r[day]?.Red||0, bl = r[day]?.Bel||0, wd = r[day]?.Wood||0;
-          cells.push(rd, bl, wd, rd+bl+wd);
-          totRed+=rd; totBel+=bl; totWood+=wd; totAll+=rd+bl+wd;
+    function buildRows(itemOrder, section){
+      return itemOrder.map(itemName=>{
+        // Find this item in prod_items (may not exist — output zeros if not found)
+        const pi=cfg.prod_items.find(p=>p.name===itemName&&p.sec===section);
+        const cells=[];
+        for(const day of DAYS){
+          const rd=pi?result[itemName]?.[day]?.Red||0:0;
+          const bl=pi?result[itemName]?.[day]?.Bel||0:0;
+          const wd=pi?result[itemName]?.[day]?.Wood||0:0;
+          cells.push(rd,bl,wd,''); // blank = Excel SUM formula for day total
         }
-        return pi.name+'\t'+cells.join('\t')+'\t\t'+totAll+'\t'+totBel+'\t'+totWood+'\t'+totRed;
+        // Four blank totals at end (Total, Bellevue Total, Woodinville Total, Redmond Total)
+        return itemName+'\t'+cells.join('\t')+'\t\t\t\t';
       }).join('\n');
     }
 
-    const header = 'Item:\t' + DAYS.flatMap(d => ['Red '+d,'Bel '+d,'Wood '+d,d]).join('\t') + '\t\tTotal:\tBellevue Total:\tWoodinville Total:\tRedmond Total:';
-    const output = [
+    const output=[
       header,
-      buildRows(retailItems),
+      buildRows(RETAIL_ORDER,'retail'),
       'Kitchen:',
-      buildRows(kitchenItems),
+      buildRows(KITCHEN_ORDER,'kitchen'),
       header
     ].join('\n');
 
-    document.getElementById('out-area').textContent = output;
-    document.getElementById('out-wrap').style.display = 'block';
-    setStatus('gen-status','&#10003; Done! Copy the output below and paste into your Excel sheet.','ok');
-  } catch(e) {
+    document.getElementById('out-area').textContent=output;
+    document.getElementById('out-wrap').style.display='block';
+    setStatus('gen-status','Done! Blank cells preserve your Excel SUM formulas. Copy and paste.','ok');
+  }catch(e){
     setStatus('gen-status','Error: '+e.message,'err');
   }
 }
 
-async function copyOut() {
-  const text = document.getElementById('out-area').textContent;
-  if(!text) { alert('Generate output first.'); return; }
-  try {
-    await navigator.clipboard.writeText(text);
-    alert('Copied to clipboard — paste directly into your Excel sheet.');
-  } catch(e) {
-    alert('Select all the text in the output box and copy manually (Ctrl+C or Cmd+C).');
-  }
+async function copyOut(){
+  const text=document.getElementById('out-area').textContent;
+  if(!text){alert('Generate output first.');return;}
+  try{ await navigator.clipboard.writeText(text); alert('Copied — paste directly into Excel.'); }
+  catch(e){ alert('Select the output text and copy manually (Ctrl+C / Cmd+C).'); }
 }
 
-loadAll();
+// ── BOOT ─────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
