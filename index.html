@@ -555,16 +555,46 @@ function renderProdItems(){
   if(!cfg.prod_items.length){el.innerHTML='<p class="empty">No production items yet.</p>';return;}
   const retail=cfg.prod_items.filter(p=>p.sec==='retail');
   const kitchen=cfg.prod_items.filter(p=>p.sec==='kitchen');
-  let html='<table class="tbl"><thead><tr><th>Production item</th><th>Section</th><th>Relationships</th><th></th></tr></thead><tbody>';
+  let html='<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Use the arrows to reorder items — output order matches this list exactly.</div>';
+  html+='<table class="tbl"><thead><tr><th style="width:60px">Order</th><th>Production item</th><th>Section</th><th>Relationships</th><th></th></tr></thead><tbody>';
   const row=p=>{
     const i=cfg.prod_items.indexOf(p);
     const count=cfg.rels.filter(r=>r.prod===p.name).length;
-    return`<tr><td><strong>${p.name}</strong></td><td><span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}">${p.sec}</span></td><td style="color:var(--text2)">${count} item${count!==1?'s':''}</td><td><button class="btn btnsm" onclick="removeProdItem(${i})">✕</button></td></tr>`;
+    const isFirst=i===0||(p.sec==='kitchen'&&cfg.prod_items.filter(x=>x.sec==='kitchen').indexOf(p)===0);
+    const secItems=cfg.prod_items.filter(x=>x.sec===p.sec);
+    const secIdx=secItems.indexOf(p);
+    const isFirstInSec=secIdx===0;
+    const isLastInSec=secIdx===secItems.length-1;
+    return`<tr>
+      <td>
+        <div style="display:flex;gap:2px">
+          <button class="btn btnsm" style="padding:2px 6px" onclick="moveProdItem(${i},-1)" ${isFirstInSec?'disabled style="opacity:.3"':''}>↑</button>
+          <button class="btn btnsm" style="padding:2px 6px" onclick="moveProdItem(${i},1)" ${isLastInSec?'disabled style="opacity:.3"':''}>↓</button>
+        </div>
+      </td>
+      <td><strong>${p.name}</strong></td>
+      <td><span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}">${p.sec}</span></td>
+      <td style="color:var(--text2)">${count} item${count!==1?'s':''}</td>
+      <td><button class="btn btnsm" onclick="removeProdItem(${i})">✕</button></td>
+    </tr>`;
   };
-  if(retail.length) html+=`<tr class="tbl-section"><td colspan="4">Retail</td></tr>${retail.map(row).join('')}`;
-  if(kitchen.length) html+=`<tr class="tbl-section"><td colspan="4">Kitchen</td></tr>${kitchen.map(row).join('')}`;
+  if(retail.length) html+=`<tr class="tbl-section"><td colspan="5">Retail — output order</td></tr>${retail.map(row).join('')}`;
+  if(kitchen.length) html+=`<tr class="tbl-section"><td colspan="5">Kitchen — output order</td></tr>${kitchen.map(row).join('')}`;
   html+='</tbody></table>';
   el.innerHTML=html;
+}
+
+function moveProdItem(i, dir){
+  // Only move within the same section
+  const item=cfg.prod_items[i];
+  const target=i+dir;
+  if(target<0||target>=cfg.prod_items.length)return;
+  if(cfg.prod_items[target].sec!==item.sec)return;
+  // Swap
+  cfg.prod_items.splice(i,1);
+  cfg.prod_items.splice(target,0,item);
+  saveConfigField('prod_items',cfg.prod_items);
+  renderProdItems();
 }
 
 function updateRelProdSelect(){
@@ -845,20 +875,12 @@ async function generate(debugMode=false){
     // Header row
     const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,'']).join('\t')+'\t\t\t\t\t';
 
-    // Normalize accents/case for fuzzy name matching
-    function normName(s){ return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim(); }
-
-    function buildRows(itemOrder, section){
-      // Map normalized prod_item name → actual result key, scoped to this section only
-      // This means kitchen Baguette and retail Baguette are kept separate
-      const normToKey={};
-      for(const pi of cfg.prod_items){
-        if(pi.sec===section) normToKey[normName(pi.name)]=pi.name;
-      }
-      return itemOrder.map(itemName=>{
-        // Look up result by normalized name — falls back to exact name if no match
-        const key=normToKey[normName(itemName)]||itemName;
-        const r=result[key];
+    // Build output using cfg.prod_items order directly — no name matching needed
+    // Retail and kitchen items are separate entries in prod_items so Baguette (retail)
+    // and Baguette (kitchen) are distinct and pull from their own result keys
+    function buildRows(section){
+      return cfg.prod_items.filter(p=>p.sec===section).map(pi=>{
+        const r=result[pi.name];
         const cells=[];
         for(const day of DAYS){
           const rd=r?r[day]?.Red||0:0;
@@ -866,9 +888,17 @@ async function generate(debugMode=false){
           const wd=r?r[day]?.Wood||0:0;
           cells.push(rd,bl,wd,''); // blank preserves Excel SUM formula
         }
-        // Four blank totals at end (Total, Bellevue Total, Woodinville Total, Redmond Total)
-        return itemName+'\t'+cells.join('\t')+'\t\t\t\t';
+        return pi.name+'	'+cells.join('	')+'				';
       }).join('\n');
+    }
+
+    const output=[
+      header,
+      buildRows('retail'),
+      'Kitchen:',
+      buildRows('kitchen'),
+      header
+    ].join('\n');
     }
 
     const output=[
