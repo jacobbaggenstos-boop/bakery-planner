@@ -845,16 +845,26 @@ async function generate(debugMode=false){
     // Header row
     const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,'']).join('\t')+'\t\t\t\t\t';
 
+    // Normalize accents/case for fuzzy name matching
+    function normName(s){ return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim(); }
+
     function buildRows(itemOrder, section){
+      // Map normalized prod_item name → actual result key, scoped to this section only
+      // This means kitchen Baguette and retail Baguette are kept separate
+      const normToKey={};
+      for(const pi of cfg.prod_items){
+        if(pi.sec===section) normToKey[normName(pi.name)]=pi.name;
+      }
       return itemOrder.map(itemName=>{
-        // Find this item in prod_items (may not exist — output zeros if not found)
-        const pi=cfg.prod_items.find(p=>p.name===itemName&&p.sec===section);
+        // Look up result by normalized name — falls back to exact name if no match
+        const key=normToKey[normName(itemName)]||itemName;
+        const r=result[key];
         const cells=[];
         for(const day of DAYS){
-          const rd=pi?result[itemName]?.[day]?.Red||0:0;
-          const bl=pi?result[itemName]?.[day]?.Bel||0:0;
-          const wd=pi?result[itemName]?.[day]?.Wood||0:0;
-          cells.push(rd,bl,wd,''); // blank = Excel SUM formula for day total
+          const rd=r?r[day]?.Red||0:0;
+          const bl=r?r[day]?.Bel||0:0;
+          const wd=r?r[day]?.Wood||0:0;
+          cells.push(rd,bl,wd,''); // blank preserves Excel SUM formula
         }
         // Four blank totals at end (Total, Bellevue Total, Woodinville Total, Redmond Total)
         return itemName+'\t'+cells.join('\t')+'\t\t\t\t';
