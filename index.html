@@ -902,7 +902,7 @@ async function generate(debugMode=false){
 
     // ── BUILD OUTPUT IN FIXED ORDER, BLANK TOTAL CELLS ───
     // Header row
-    const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,'']).join('\t')+'\t\t\t\t\t';
+    const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`]).join('\t');
 
     // Build output in the order items appear in cfg.prod_items — no name matching needed
     const buildRows = (section) => {
@@ -913,9 +913,9 @@ async function generate(debugMode=false){
           const rd = r ? r[day]?.Red||0 : 0;
           const bl = r ? r[day]?.Bel||0 : 0;
           const wd = r ? r[day]?.Wood||0 : 0;
-          cells.push(rd, bl, wd, '');
+          cells.push(rd, bl, wd);
         }
-        return pi.name + '\t' + cells.join('\t') + '\t\t\t\t';
+        return pi.name + '\t' + cells.join('\t');
       }).join('\n');
     };
 
