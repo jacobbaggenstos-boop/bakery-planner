@@ -902,24 +902,60 @@ async function generate(debugMode=false){
 
     // ── BUILD OUTPUT IN FIXED ORDER, BLANK TOTAL CELLS ───
     // Header row
-    const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`]).join('\t');
+    const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,d]).join('\t')+'\t\tTotal:\tBellevue Total:\tWoodinville Total:\tRedmond Total:';
 
-    // Build output in the order items appear in cfg.prod_items — no name matching needed
+    // Column structure: B=Red Tue, C=Bel Tue, D=Wood Tue, E=Tue Total,
+    // F-I=Wed, J-M=Thu, N-Q=Fri, R-U=Sat, V-Y=Sun, Z-AC=Mon
+    // AD=blank separator, AE=Grand Total, AF=Bel Total, AG=Wood Total, AH=Red Total
+    const DAY_COLS = [
+      {r:'B',b:'C',w:'D',t:'E'},
+      {r:'F',b:'G',w:'H',t:'I'},
+      {r:'J',b:'K',w:'L',t:'M'},
+      {r:'N',b:'O',w:'P',t:'Q'},
+      {r:'R',b:'S',w:'T',t:'U'},
+      {r:'V',b:'W',w:'X',t:'Y'},
+      {r:'Z',b:'AA',w:'AB',t:'AC'}
+    ];
+
+    // Row 2 = first retail item; kitchen starts after retail rows + 1 (Kitchen: label row)
+    const retailItems = cfg.prod_items.filter(p=>p.sec==='retail');
+    const kitchenItems = cfg.prod_items.filter(p=>p.sec==='kitchen');
+    // Row 1 = header, row 2..N+1 = retail, row N+2 = 'Kitchen:', row N+3..end = kitchen
+    const retailStartRow = 2;
+    const kitchenStartRow = retailStartRow + retailItems.length + 1;
+
+    const buildRowFormulas = (row) => {
+      const dayTotalFormulas = DAY_COLS.map(dc =>
+        '=' + dc.r + row + '+' + dc.b + row + '+' + dc.w + row
+      );
+      const grandTotal  = '=E'+row+'+I'+row+'+M'+row+'+Q'+row+'+U'+row+'+Y'+row+'+AC'+row;
+      const belTotal    = '=C'+row+'+G'+row+'+K'+row+'+O'+row+'+S'+row+'+W'+row+'+AA'+row;
+      const woodTotal   = '=D'+row+'+H'+row+'+L'+row+'+P'+row+'+T'+row+'+X'+row+'+AB'+row;
+      const redTotal    = '=B'+row+'+F'+row+'+J'+row+'+N'+row+'+R'+row+'+V'+row+'+Z'+row;
+      return { dayTotalFormulas, grandTotal, belTotal, woodTotal, redTotal };
+    };
+
     const buildRows = (section) => {
-      return cfg.prod_items.filter(p=>p.sec===section).map(pi=>{
+      const items = cfg.prod_items.filter(p=>p.sec===section);
+      const startRow = section==='retail' ? retailStartRow : kitchenStartRow;
+      return items.map((pi, idx) => {
+        const row = startRow + idx;
         const r = result[pi.name];
+        const f = buildRowFormulas(row);
         const cells = [];
-        for(const day of DAYS){
+        for(let di=0; di<DAYS.length; di++){
+          const day = DAYS[di];
           const rd = r ? r[day]?.Red||0 : 0;
           const bl = r ? r[day]?.Bel||0 : 0;
           const wd = r ? r[day]?.Wood||0 : 0;
-          cells.push(rd, bl, wd);
+          cells.push(rd, bl, wd, f.dayTotalFormulas[di]);
         }
+        cells.push('', f.grandTotal, f.belTotal, f.woodTotal, f.redTotal);
         return pi.name + '\t' + cells.join('\t');
       }).join('\n');
     };
 
-    const output = [
+        const output = [
       header,
       buildRows('retail'),
       'Kitchen:',
