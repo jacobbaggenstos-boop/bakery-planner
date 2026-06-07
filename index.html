@@ -555,44 +555,73 @@ function renderProdItems(){
   if(!cfg.prod_items.length){el.innerHTML='<p class="empty">No production items yet.</p>';return;}
   const retail=cfg.prod_items.filter(p=>p.sec==='retail');
   const kitchen=cfg.prod_items.filter(p=>p.sec==='kitchen');
-  let html='<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Use the arrows to reorder items — output order matches this list exactly.</div>';
-  html+='<table class="tbl"><thead><tr><th style="width:60px">Order</th><th>Production item</th><th>Section</th><th>Relationships</th><th></th></tr></thead><tbody>';
-  const row=p=>{
-    const i=cfg.prod_items.indexOf(p);
-    const count=cfg.rels.filter(r=>r.prod===p.name).length;
-    const isFirst=i===0||(p.sec==='kitchen'&&cfg.prod_items.filter(x=>x.sec==='kitchen').indexOf(p)===0);
-    const secItems=cfg.prod_items.filter(x=>x.sec===p.sec);
-    const secIdx=secItems.indexOf(p);
-    const isFirstInSec=secIdx===0;
-    const isLastInSec=secIdx===secItems.length-1;
-    return`<tr>
-      <td>
-        <div style="display:flex;gap:2px">
-          <button class="btn btnsm" style="padding:2px 6px" onclick="moveProdItem(${i},-1)" ${isFirstInSec?'disabled style="opacity:.3"':''}>↑</button>
-          <button class="btn btnsm" style="padding:2px 6px" onclick="moveProdItem(${i},1)" ${isLastInSec?'disabled style="opacity:.3"':''}>↓</button>
-        </div>
-      </td>
-      <td><strong>${p.name}</strong></td>
-      <td><span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}">${p.sec}</span></td>
-      <td style="color:var(--text2)">${count} item${count!==1?'s':''}</td>
-      <td><button class="btn btnsm" onclick="removeProdItem(${i})">✕</button></td>
-    </tr>`;
+
+  let html=`<div style="font-size:12px;color:var(--text2);margin-bottom:10px">
+    Drag the <span style="font-weight:600">⠿</span> handle to reorder — output order matches this list exactly.
+  </div>`;
+
+  const renderSection=(items,label)=>{
+    if(!items.length)return'';
+    const isKitchen=items[0].sec==='kitchen';
+    let s=`<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:8px 0 4px">${label}</div>`;
+    s+=`<div id="sortable-${isKitchen?'kitchen':'retail'}" style="border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden">`;
+    s+=items.map(p=>{
+      const i=cfg.prod_items.indexOf(p);
+      const count=cfg.rels.filter(r=>r.prod===p.name).length;
+      return `<div class="drag-row" draggable="true" data-index="${i}" data-sec="${p.sec}"
+        style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:0.5px solid var(--border);background:var(--bg);cursor:default"
+        ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="dragDrop(event)" ondragend="dragEnd(event)">
+        <span style="cursor:grab;font-size:16px;color:var(--text3);flex-shrink:0;line-height:1">⠿</span>
+        <span style="flex:1;font-size:13px;font-weight:500">${p.name}</span>
+        <span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}" style="flex-shrink:0">${p.sec}</span>
+        <span style="font-size:12px;color:var(--text2);min-width:60px">${count} rel${count!==1?'s':''}</span>
+        <button class="btn btnsm" onclick="removeProdItem(${i})" style="flex-shrink:0">✕</button>
+      </div>`;
+    }).join('');
+    s+='</div>';
+    return s;
   };
-  if(retail.length) html+=`<tr class="tbl-section"><td colspan="5">Retail — output order</td></tr>${retail.map(row).join('')}`;
-  if(kitchen.length) html+=`<tr class="tbl-section"><td colspan="5">Kitchen — output order</td></tr>${kitchen.map(row).join('')}`;
-  html+='</tbody></table>';
+
+  html+=renderSection(retail,'Retail — output order');
+  html+=renderSection(kitchen,'Kitchen — output order');
   el.innerHTML=html;
 }
 
-function moveProdItem(i, dir){
-  // Only move within the same section
-  const item=cfg.prod_items[i];
-  const target=i+dir;
-  if(target<0||target>=cfg.prod_items.length)return;
-  if(cfg.prod_items[target].sec!==item.sec)return;
-  // Swap
-  cfg.prod_items.splice(i,1);
-  cfg.prod_items.splice(target,0,item);
+// ── DRAG AND DROP ─────────────────────────────────────────
+let dragSrcIndex=null;
+
+function dragStart(e){
+  dragSrcIndex=parseInt(e.currentTarget.dataset.index);
+  e.currentTarget.style.opacity='0.4';
+  e.dataTransfer.effectAllowed='move';
+}
+
+function dragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  // Highlight drop target
+  document.querySelectorAll('.drag-row').forEach(r=>r.style.borderTop='');
+  const target=e.currentTarget;
+  if(target.dataset.index!=dragSrcIndex) target.style.borderTop='2px solid var(--info)';
+}
+
+function dragEnd(e){
+  e.currentTarget.style.opacity='1';
+  document.querySelectorAll('.drag-row').forEach(r=>r.style.borderTop='');
+  dragSrcIndex=null;
+}
+
+function dragDrop(e){
+  e.preventDefault();
+  const destIndex=parseInt(e.currentTarget.dataset.index);
+  if(destIndex===dragSrcIndex||dragSrcIndex===null)return;
+  const srcItem=cfg.prod_items[dragSrcIndex];
+  const destItem=cfg.prod_items[destIndex];
+  // Only allow reorder within same section
+  if(srcItem.sec!==destItem.sec)return;
+  cfg.prod_items.splice(dragSrcIndex,1);
+  const newDest=destIndex>dragSrcIndex?destIndex-1:destIndex;
+  cfg.prod_items.splice(newDest,0,srcItem);
   saveConfigField('prod_items',cfg.prod_items);
   renderProdItems();
 }
@@ -862,9 +891,9 @@ async function generate(debugMode=false){
           const weekQtys=weekStarts.map((_,w)=>calcQtyForWeek(pi,day,loc,w));
           let qty=smartAverage(weekQtys);
           if(pi.sec==='kitchen')qty=qty*kitchenBuffer;
-          // Apply per-item multiplier on top of global pct
+          // Per-item multiplier overrides global — if set, use it alone; otherwise use global
           const itemMult = cfg.item_multipliers[pi.name];
-          const effectivePct = itemMult !== undefined ? pct * (itemMult/100) : pct;
+          const effectivePct = itemMult !== undefined ? (itemMult/100) : pct;
           qty=Math.ceil(qty*effectivePct);
           result[pi.name][day][loc]=qty;
         }
@@ -954,7 +983,7 @@ function renderItemMultipliers() {
       const sec = KITCHEN_ORDER.includes(name) && !RETAIL_ORDER.includes(name) ? 'kitchen' : 'retail';
       const val = cfg.item_multipliers[name] !== undefined ? cfg.item_multipliers[name] : '';
       const globalPct = parseInt(document.getElementById('pct-slider')?.value||100);
-      const effective = val !== '' ? Math.round(globalPct * parseFloat(val) / 100) + '%' : globalPct + '%';
+      const effective = val !== '' ? parseFloat(val) + '% (override)' : globalPct + '% (global)';
       return `<tr>
         <td>${name}</td>
         <td><span class="badge ${sec==='kitchen'?'bpurp':'binfo'}">${sec}</span></td>
