@@ -875,24 +875,22 @@ async function generate(debugMode=false){
     // Header row
     const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,'']).join('\t')+'\t\t\t\t\t';
 
-    // Build output using cfg.prod_items order directly — no name matching needed
-    // Retail and kitchen items are separate entries in prod_items so Baguette (retail)
-    // and Baguette (kitchen) are distinct and pull from their own result keys
-    function buildRows(section){
+    // Build output in the order items appear in cfg.prod_items — no name matching needed
+    const buildRows = (section) => {
       return cfg.prod_items.filter(p=>p.sec===section).map(pi=>{
-        const r=result[pi.name];
-        const cells=[];
+        const r = result[pi.name];
+        const cells = [];
         for(const day of DAYS){
-          const rd=r?r[day]?.Red||0:0;
-          const bl=r?r[day]?.Bel||0:0;
-          const wd=r?r[day]?.Wood||0:0;
-          cells.push(rd,bl,wd,''); // blank preserves Excel SUM formula
+          const rd = r ? r[day]?.Red||0 : 0;
+          const bl = r ? r[day]?.Bel||0 : 0;
+          const wd = r ? r[day]?.Wood||0 : 0;
+          cells.push(rd, bl, wd, '');
         }
-        return pi.name+'	'+cells.join('	')+'				';
+        return pi.name + '\t' + cells.join('\t') + '\t\t\t\t';
       }).join('\n');
-    }
+    };
 
-    const output=[
+    const output = [
       header,
       buildRows('retail'),
       'Kitchen:',
