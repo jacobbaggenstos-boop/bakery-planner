@@ -225,59 +225,69 @@ input[type=range]{accent-color:var(--text)}
 
     <!-- GENERATE -->
     <div id="tab-generate" class="panel">
-      <div class="card">
-        <div class="card-title">Generation settings</div>
-        <div class="ctrl-row">
-          <div class="pctctl">
-            <label>Overall adjustment:</label>
-            <input type="range" min="50" max="200" value="100" step="5" id="pct-slider" oninput="document.getElementById('pct-val').textContent=this.value+'%'" style="width:140px"/>
-            <span class="pctval" id="pct-val">100%</span>
-          </div>
-          <span style="font-size:12px;color:var(--text2)">Raise or lower all numbers globally</span>
-        </div>
-        <div class="row3">
-          <div class="fg"><label>Most recent week start (Tuesday)</label><input type="date" id="week-start"/></div>
-          <div class="fg"><label>Weeks to average</label>
-            <select id="num-weeks">
-              <option value="1">1 week</option>
-              <option value="2" selected>2 weeks</option>
-              <option value="3">3 weeks</option>
-              <option value="4">4 weeks</option>
-            </select>
-          </div>
-          <div class="fg"><label>Outlier threshold</label>
-            <select id="outlier-pct">
-              <option value="0">Off</option>
-              <option value="15">15%</option>
-              <option value="20" selected>20%</option>
-              <option value="25">25%</option>
-            </select>
-          </div>
-        </div>
+
+      <!-- Step 1: Fetch -->
+      <div class="card" id="gen-fetch-card">
+        <div class="card-title">Step 1 — Pull sales data</div>
+        <div class="hint">Automatically pulls the last two of each weekday and averages them. If the two weeks differ by &gt;20%, a third week is pulled and the two closest are used.</div>
         <div class="row2">
           <div class="fg"><label>Open time</label><input type="time" id="open-time" value="08:00" oninput="debounceSave()"/></div>
           <div class="fg"><label>Close time</label><input type="time" id="close-time" value="17:00" oninput="debounceSave()"/></div>
         </div>
         <div class="btn-row">
-          <button class="btn btnp" onclick="generate(false)">Pull data &amp; generate</button>
-          <button class="btn" onclick="copyOut()">Copy to clipboard</button>
-          <button class="btn" onclick="generate(true)" title="Show exact Square item names for debugging">Debug item names</button>
+          <button class="btn btnp" id="fetch-btn" onclick="fetchData()">Pull last 2 weeks of data</button>
+          <button class="btn" onclick="generate(true)">Debug item names</button>
         </div>
       </div>
-      <div class="card">
-        <div class="card-title">Per-item adjustments <span class="badge binfo">override global %</span></div>
-        <div class="hint">Set a custom multiplier for any item. Applied on top of the global adjustment — e.g. global 110% × item 80% = 88%. Leave blank to use the global setting.</div>
-        <div id="item-multipliers-list"></div>
-      </div>
+
       <div id="gen-status"></div>
       <div id="debug-wrap" style="display:none">
-        <div class="sec-label">Debug — exact Square item names (Tuesday, Redmond)</div>
+        <div class="sec-label">Debug — exact Square item names (last Tuesday, Redmond)</div>
         <div class="output" id="debug-area" style="max-height:260px"></div>
       </div>
-      <div id="out-wrap" style="display:none">
-        <div class="sec-label">Paste-ready output — tab-separated, matches your Excel layout. Total columns are left blank so Excel formulas recalculate.</div>
-        <div class="output" id="out-area"></div>
+
+      <!-- Step 2: Review + adjust (shown after fetch) -->
+      <div id="gen-review-wrap" style="display:none">
+        <div class="card">
+          <div class="card-title">Step 2 — Next week projection <span class="badge berr" id="proj-required-badge">required</span></div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:13px;color:var(--text2)">I expect sales to</span>
+            <select id="proj-direction" onchange="updateProjection()" style="font-size:13px;width:auto;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:7px 10px;color:var(--text)">
+              <option value="">-- select --</option>
+              <option value="steady">remain steady</option>
+              <option value="increase">increase by</option>
+              <option value="drop">drop by</option>
+            </select>
+            <div id="proj-pct-wrap" style="display:none;align-items:center;gap:6px">
+              <input type="number" id="proj-pct" value="10" min="1" max="100" step="1"
+                style="width:70px;font-size:14px;font-weight:600;text-align:center"
+                oninput="updateProjection()"/>
+              <span style="font-size:13px;color:var(--text2)">%</span>
+            </div>
+          </div>
+          <div id="proj-summary" style="font-size:14px;font-weight:600;color:var(--info);margin-top:10px;min-height:20px"></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div>
+              <div class="card-title" style="margin-bottom:2px">Step 3 — Review &amp; adjust <span id="weeks-used-label" class="badge binfo" style="margin-left:4px"></span></div>
+              <div class="hint" style="margin:0">Adjust any item's % to override the projection. Final numbers update live.</div>
+            </div>
+            <button class="btn btnsm" onclick="toggleAllDays()" id="toggle-days-btn">Show daily</button>
+          </div>
+          <div id="baseline-table"></div>
+        </div>
+
+        <div class="card">
+          <div class="btn-row">
+            <button class="btn btnp" onclick="copyOut()">Copy to clipboard</button>
+            <button class="btn" onclick="resetFetch()">Re-fetch data</button>
+          </div>
+          <div id="out-status" style="margin-top:8px"></div>
+        </div>
       </div>
+
     </div>
 
   </div>
@@ -408,7 +418,6 @@ function applyConfig(){
   renderProdItems(); renderRels(); renderCatalogGrid();
   renderOosDays(); renderOosLocs(); renderOosList();
   updateRelProdSelect();
-  renderItemMultipliers();
   if(cfg.catalog.length) document.getElementById('catalog-count').textContent = cfg.catalog.length+' items';
   // Set default week start
   document.getElementById('week-start').value = getDefaultWeekStart();
@@ -784,197 +793,374 @@ function calcOosAddition(hourlyData,soldOutTime,openTime,closeTime){
 }
 
 // ── GENERATE ─────────────────────────────────────────────
-async function generate(debugMode=false){
-  const tok=token();
-  const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
-  const locBel=document.getElementById('loc-bel').value.trim()||cfg.loc_bel;
-  const locWood=document.getElementById('loc-wood').value.trim()||cfg.loc_wood;
-  const weekStart=document.getElementById('week-start').value;
-  const pct=parseInt(document.getElementById('pct-slider').value)/100;
-  const openTime=document.getElementById('open-time').value;
-  const closeTime=document.getElementById('close-time').value;
-  const kitchenBuffer=1+(parseFloat(document.getElementById('kitchen-buffer').value)||5)/100;
-  const numWeeks=parseInt(document.getElementById('num-weeks').value)||2;
-  const outlierPct=parseInt(document.getElementById('outlier-pct').value)||0;
+// Stores fetched baseline data: { itemName: { day: { Red, Bel, Wood } } }
+let baselineData = {};
+let weeksUsedInfo = '';
+let showDailyBreakdown = false;
 
-  if(!tok){setStatus('gen-status','Add your Square token in Setup.','err');return;}
-  if(!weekStart){setStatus('gen-status','Select a week start date.','err');return;}
-  if(!cfg.prod_items.length){setStatus('gen-status','Add production items in the Catalog tab first.','err');return;}
+// Get the last N occurrences of a given weekday (0=Sun..6=Sat) before today
+function getLastNWeekdays(dayOfWeek, n) {
+  const dates = [];
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  let d = new Date(today);
+  d.setDate(d.getDate() - 1); // start from yesterday
+  while(dates.length < n) {
+    if(d.getDay() === dayOfWeek) dates.push(new Date(d));
+    d.setDate(d.getDate() - 1);
+  }
+  return dates; // most recent first
+}
 
-  const locMap={Red:locRed,Bel:locBel,Wood:locWood};
-  const weekStarts=[];
-  for(let w=0;w<numWeeks;w++){
-    const dt=new Date(weekStart+'T00:00:00'); dt.setDate(dt.getDate()-w*7); weekStarts.push(dt);
+// Smart average: given 2+ week values, if two closest are within 20%, use those two.
+// Otherwise keep trying with more weeks.
+function smartPairAverage(values) {
+  if(values.length === 0) return 0;
+  if(values.length === 1) return values[0];
+  // Find the pair with smallest relative difference
+  let bestPair = [values[0], values[1]];
+  let bestDiff = Infinity;
+  for(let i=0; i<values.length; i++){
+    for(let j=i+1; j<values.length; j++){
+      const avg = (values[i]+values[j])/2;
+      if(avg === 0) { bestPair=[values[i],values[j]]; bestDiff=0; continue; }
+      const diff = Math.abs(values[i]-values[j])/avg;
+      if(diff < bestDiff){ bestDiff=diff; bestPair=[values[i],values[j]]; }
+    }
+  }
+  return (bestPair[0]+bestPair[1])/2;
+}
+
+async function fetchData() {
+  const tok = token();
+  const locRed = document.getElementById('loc-red').value.trim()||cfg.loc_red;
+  const locBel = document.getElementById('loc-bel').value.trim()||cfg.loc_bel;
+  const locWood = document.getElementById('loc-wood').value.trim()||cfg.loc_wood;
+  const openTime = document.getElementById('open-time').value;
+  const closeTime = document.getElementById('close-time').value;
+
+  if(!tok){ setStatus('gen-status','Add your Square token in Setup.','err'); return; }
+  if(!cfg.prod_items.length){ setStatus('gen-status','Add production items in the Catalog tab first.','err'); return; }
+
+  document.getElementById('fetch-btn').disabled = true;
+  document.getElementById('gen-review-wrap').style.display = 'none';
+
+  const locMap = {Red:locRed, Bel:locBel, Wood:locWood};
+  const OUTLIER_THRESH = 0.20;
+  const WEEKS_TO_TRY = 3; // fetch up to 3 of each weekday
+
+  // salesByDayOfWeek[dayOfWeek][weekIdx][locKey] = {counts, hourly}
+  const salesByDow = {};
+  const dowNames = {0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday'};
+
+  let fetched = 0;
+  const totalFetches = 7 * WEEKS_TO_TRY * Object.values(locMap).filter(Boolean).length;
+  setStatus('gen-status',`<span class="spin"></span> Fetching data… [0/${totalFetches}]`,'info');
+
+  for(let dow=0; dow<7; dow++){
+    salesByDow[dow] = [];
+    const weekDates = getLastNWeekdays(dow, WEEKS_TO_TRY);
+    for(const date of weekDates){
+      const weekData = {};
+      for(const[loc, locId] of Object.entries(locMap)){
+        if(!locId){ weekData[loc]={counts:{},hourly:{}}; continue; }
+        fetched++;
+        setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} ${dowNames[dow]}s… [${fetched}/${totalFetches}]`,'info');
+        const startISO = new Date(date).toISOString();
+        const endDate = new Date(date); endDate.setDate(endDate.getDate()+1);
+        const endISO = endDate.toISOString();
+        try{
+          const orders = await fetchOrders(locId, startISO, endISO);
+          weekData[loc] = aggregateOrders(orders);
+        } catch(e){ weekData[loc]={counts:{},hourly:{}}; }
+      }
+      salesByDow[dow].push(weekData);
+    }
   }
 
-  setStatus('gen-status','<span class="spin"></span> Starting data fetch…','info');
+  setStatus('gen-status','<span class="spin"></span> Calculating baselines…','info');
 
-  try{
-    const salesByWeek=[],hourlyByWeek=[];
-    for(let w=0;w<numWeeks;w++){
-      const sg={},hg={};
-      for(const day of DAYS){sg[day]={};hg[day]={};for(const l of LOCS){sg[day][l]={};hg[day][l]={};}}
-      salesByWeek.push(sg);hourlyByWeek.push(hg);
-    }
-    let fetchNum=0;
-    const totalFetches=numWeeks*Object.values(locMap).filter(Boolean).length*7;
-    for(let w=0;w<numWeeks;w++){
-      const startDt=weekStarts[w];
-      const wLabel=w===0?'most recent week':`${w+1} weeks ago`;
-      for(const[loc,locId]of Object.entries(locMap)){
-        if(!locId)continue;
-        for(let di=0;di<7;di++){
-          const day=DAYS[di]; fetchNum++;
-          setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} — ${day} (${wLabel}) [${fetchNum}/${totalFetches}]…`,'info');
-          const dayDt=new Date(startDt); dayDt.setDate(startDt.getDate()+di);
-          const nextDt=new Date(dayDt); nextDt.setDate(dayDt.getDate()+1);
-          try{
-            const orders=await fetchOrders(locId,dayDt.toISOString(),nextDt.toISOString());
-            const{counts,hourly}=aggregateOrders(orders);
-            salesByWeek[w][day][loc]=counts;
-            hourlyByWeek[w][day][loc]=hourly;
-          }catch(e){console.warn('Fetch error',loc,day,e.message);}
+  // For each production item + day-of-week + location, compute qty for each week,
+  // then smart-average the best pair
+  baselineData = {};
+  const weeksUsedPerItem = {};
+
+  for(const pi of cfg.prod_items){
+    baselineData[pi.name] = {};
+    for(let dow=0; dow<7; dow++){
+      const dayName = DAYS[dow]; // DAYS = Tue..Mon
+      // Map DAYS index to day-of-week index
+      const dowIndex = [2,3,4,5,6,0,1][dow]; // Tue=2,Wed=3,Thu=4,Fri=5,Sat=6,Sun=0,Mon=1
+      const weekSamples = salesByDow[dowIndex];
+      baselineData[pi.name][dayName] = {};
+
+      for(const loc of LOCS){
+        const weeklyQtys = weekSamples.map(weekData => {
+          const sales = weekData[loc]?.counts||{};
+          const hourly = weekData[loc]?.hourly||{};
+          const myRels = cfg.rels.filter(r=>r.prod===pi.name);
+          let qty = 0;
+          for(const rel of myRels){
+            qty += lookupSales(sales, rel.menu) * rel.qty;
+            const oosKey = dayName+'|'+loc;
+            const oosEntry = (oosData[oosKey]||[]).find(o=>o.name===pi.name);
+            if(oosEntry) qty += calcOosAddition(lookupHourly(hourly,rel.menu), oosEntry.time, openTime, closeTime)*rel.qty;
+          }
+          if(myRels.length===0){
+            qty = lookupSales(sales, pi.name);
+            const oosKey = dayName+'|'+loc;
+            const oosEntry = (oosData[oosKey]||[]).find(o=>o.name===pi.name);
+            if(oosEntry) qty += calcOosAddition(lookupHourly(hourly,pi.name), oosEntry.time, openTime, closeTime);
+          }
+          return qty;
+        });
+
+        // Smart averaging: use best pair
+        const avg = smartPairAverage(weeklyQtys);
+        if(pi.sec==='kitchen'){
+          const buf = 1+(parseFloat(document.getElementById('kitchen-buffer')?.value)||cfg.kitchen_buffer||5)/100;
+          baselineData[pi.name][dayName][loc] = avg * buf;
+        } else {
+          baselineData[pi.name][dayName][loc] = avg;
         }
       }
     }
+  }
 
-    if(debugMode){
-      const sample=salesByWeek[0]['Tuesday']['Red'];
-      const lines=Object.entries(sample).sort((a,b)=>b[1]-a[1]).map(([name,qty])=>`${qty.toString().padStart(4)}  ${name}`);
-      document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME\n'+'─'.repeat(60)+'\n'+lines.join('\n'):'No orders found for Tuesday at Redmond.';
+  weeksUsedInfo = `Averaged from last ${WEEKS_TO_TRY} ${WEEKS_TO_TRY>2?'weeks (best 2 used)':'weeks'}`;
+  document.getElementById('weeks-used-label').textContent = weeksUsedInfo;
+  document.getElementById('gen-review-wrap').style.display = 'block';
+  document.getElementById('fetch-btn').disabled = false;
+  setStatus('gen-status','','info');
+  renderBaselineTable();
+  document.getElementById('proj-direction').value = '';
+  document.getElementById('proj-summary').textContent = '';
+  document.getElementById('proj-required-badge').style.display='';
+}
+
+function resetFetch(){
+  document.getElementById('gen-review-wrap').style.display='none';
+  baselineData={};
+}
+
+function updateProjection(){
+  const dir = document.getElementById('proj-direction').value;
+  const pctWrap = document.getElementById('proj-pct-wrap');
+  const pct = parseInt(document.getElementById('proj-pct').value)||10;
+  pctWrap.style.display = (dir==='increase'||dir==='drop') ? 'flex' : 'none';
+  const badge = document.getElementById('proj-required-badge');
+  if(dir){
+    badge.style.display='none';
+    let summary='';
+    if(dir==='steady') summary='Using baseline averages (100%)';
+    else if(dir==='increase') summary=`Projecting +${pct}% on all items (${100+pct}% of baseline)`;
+    else if(dir==='drop') summary=`Projecting −${pct}% on all items (${100-pct}% of baseline)`;
+    document.getElementById('proj-summary').textContent=summary;
+  } else {
+    badge.style.display='';
+    document.getElementById('proj-summary').textContent='';
+  }
+  renderBaselineTable();
+}
+
+function getProjectionMultiplier(){
+  const dir = document.getElementById('proj-direction').value;
+  if(!dir||dir==='steady') return 1;
+  const pct = parseInt(document.getElementById('proj-pct').value)||10;
+  return dir==='increase' ? (100+pct)/100 : (100-pct)/100;
+}
+
+function getFinalQty(itemName, day, loc){
+  const base = baselineData[itemName]?.[day]?.[loc]||0;
+  const projMult = getProjectionMultiplier();
+  const itemOverride = cfg.item_multipliers[itemName];
+  // Item override replaces projection for that item
+  const effectiveMult = itemOverride !== undefined ? itemOverride/100 : projMult;
+  return Math.ceil(base * effectiveMult);
+}
+
+function getItemWeeklyTotal(itemName){
+  let total=0;
+  for(const day of DAYS) for(const loc of LOCS) total+=getFinalQty(itemName,day,loc);
+  return total;
+}
+
+function getItemBaselineTotal(itemName){
+  let total=0;
+  for(const day of DAYS) for(const loc of LOCS){
+    total+=(baselineData[itemName]?.[day]?.[loc]||0);
+  }
+  return Math.round(total);
+}
+
+function toggleAllDays(){
+  showDailyBreakdown=!showDailyBreakdown;
+  document.getElementById('toggle-days-btn').textContent=showDailyBreakdown?'Hide daily':'Show daily';
+  renderBaselineTable();
+}
+
+function renderBaselineTable(){
+  const el=document.getElementById('baseline-table');
+  if(!Object.keys(baselineData).length){el.innerHTML='';return;}
+  const projMult=getProjectionMultiplier();
+  const retail=cfg.prod_items.filter(p=>p.sec==='retail');
+  const kitchen=cfg.prod_items.filter(p=>p.sec==='kitchen');
+
+  const renderSection=(items,label)=>{
+    if(!items.length)return'';
+    let s=`<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:10px 0 6px">${label}</div>`;
+
+    // Table header
+    s+=`<table class="tbl" style="margin-bottom:14px"><thead><tr>
+      <th>Item</th>
+      <th style="text-align:right">Baseline</th>
+      <th style="text-align:center;width:110px">Override %</th>
+      <th style="text-align:right;color:var(--info)">Final total</th>
+    </tr></thead><tbody>`;
+
+    for(const pi of items){
+      const baseline=getItemBaselineTotal(pi.name);
+      const final=getItemWeeklyTotal(pi.name);
+      const override=cfg.item_multipliers[pi.name];
+      const isOverridden=override!==undefined;
+      const safeId='mult_'+pi.name.replace(/[^a-zA-Z0-9]/g,'_');
+
+      s+=`<tr>
+        <td style="font-weight:500">${pi.name}</td>
+        <td style="text-align:right;color:var(--text2)">${baseline}</td>
+        <td style="text-align:center">
+          <div style="display:flex;align-items:center;gap:4px;justify-content:center">
+            <input type="number" id="${safeId}" value="${isOverridden?override:''}"
+              placeholder="${Math.round(projMult*100)}"
+              min="0" max="500" step="5"
+              style="width:65px;font-size:13px;text-align:right;${isOverridden?'border-color:var(--info);':'opacity:.6'}"
+              oninput="onItemMultChange('${pi.name.replace(/'/g,"\'")}',this)"/>
+            <span style="font-size:12px;color:var(--text2)">%</span>
+            ${isOverridden?`<button onclick="clearItemMult('${pi.name.replace(/'/g,"\'")}',this)" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:0" title="Reset to projection">✕</button>`:''}
+          </div>
+        </td>
+        <td style="text-align:right;font-weight:700;font-size:15px;color:var(--info)">${final}</td>
+      </tr>`;
+
+      if(showDailyBreakdown){
+        s+=`<tr><td colspan="4" style="padding:0 0 8px 16px">
+          <table style="font-size:11px;color:var(--text2);border-collapse:collapse;width:100%">
+            <tr><th style="text-align:left;padding:2px 6px;font-weight:500">Day</th>
+              ${LOCS.map(l=>`<th style="text-align:right;padding:2px 6px;font-weight:500">${LOC_LABEL[l]}</th>`).join('')}
+            </tr>
+            ${DAYS.map(day=>`<tr>
+              <td style="padding:2px 6px">${day.slice(0,3)}</td>
+              ${LOCS.map(loc=>`<td style="text-align:right;padding:2px 6px">${getFinalQty(pi.name,day,loc)}</td>`).join('')}
+            </tr>`).join('')}
+          </table>
+        </td></tr>`;
+      }
+    }
+    s+='</tbody></table>';
+    return s;
+  };
+
+  el.innerHTML=renderSection(retail,'Retail')+renderSection(kitchen,'Kitchen');
+}
+
+function onItemMultChange(name, input){
+  const val=input.value.trim();
+  if(val===''||isNaN(parseFloat(val))){
+    delete cfg.item_multipliers[name];
+    input.style.opacity='.6'; input.style.borderColor='';
+  } else {
+    cfg.item_multipliers[name]=parseFloat(val);
+    input.style.opacity='1'; input.style.borderColor='var(--info)';
+  }
+  clearTimeout(window._multTimer);
+  window._multTimer=setTimeout(()=>saveConfigField('item_multipliers',cfg.item_multipliers),800);
+  renderBaselineTable();
+}
+
+function clearItemMult(name){
+  delete cfg.item_multipliers[name];
+  saveConfigField('item_multipliers',cfg.item_multipliers);
+  renderBaselineTable();
+}
+
+async function generate(debugMode=false){
+  if(debugMode){
+    // Debug: pull last Tuesday Redmond
+    const tok=token();
+    if(!tok){setStatus('gen-status','Add your Square token.','err');return;}
+    const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
+    if(!locRed){setStatus('gen-status','Add Redmond location ID.','err');return;}
+    setStatus('gen-status','<span class="spin"></span> Fetching debug data…','info');
+    const tues=getLastNWeekdays(2,1)[0]; // last Tuesday
+    const end=new Date(tues); end.setDate(end.getDate()+1);
+    try{
+      const orders=await fetchOrders(locRed,tues.toISOString(),end.toISOString());
+      const{counts}=aggregateOrders(orders);
+      const lines=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([n,q])=>`${q.toString().padStart(4)}  ${n}`);
+      document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME
+'+'─'.repeat(60)+'
+'+lines.join('
+'):'No orders found.';
       document.getElementById('debug-wrap').style.display='block';
-      document.getElementById('out-wrap').style.display='none';
-      setStatus('gen-status','Debug complete — exact Square item names shown below.','ok');
-      return;
-    }
-
-    setStatus('gen-status','<span class="spin"></span> Calculating production quantities…','info');
-
-    function calcQtyForWeek(pi,day,loc,weekIdx){
-      const sales=salesByWeek[weekIdx][day][loc];
-      const hourly=hourlyByWeek[weekIdx][day][loc];
-      const myRels=cfg.rels.filter(r=>r.prod===pi.name);
-      let qty=0;
-      for(const rel of myRels){
-        qty+=lookupSales(sales,rel.menu)*rel.qty;
-        const oosKey=day+'|'+loc;
-        const oosEntry=(oosData[oosKey]||[]).find(o=>o.name===pi.name);
-        if(oosEntry) qty+=calcOosAddition(lookupHourly(hourly,rel.menu),oosEntry.time,openTime,closeTime)*rel.qty;
-      }
-      if(myRels.length===0){
-        qty=lookupSales(sales,pi.name);
-        const oosKey=day+'|'+loc;
-        const oosEntry=(oosData[oosKey]||[]).find(o=>o.name===pi.name);
-        if(oosEntry) qty+=calcOosAddition(lookupHourly(hourly,pi.name),oosEntry.time,openTime,closeTime);
-      }
-      return qty;
-    }
-
-    function smartAverage(values){
-      if(values.length===1)return values[0];
-      if(outlierPct===0)return values.reduce((a,b)=>a+b,0)/values.length;
-      const mean=values.reduce((a,b)=>a+b,0)/values.length;
-      if(mean===0)return 0;
-      const thresh=outlierPct/100;
-      const kept=values.filter(v=>Math.abs(v-mean)/mean<=thresh);
-      const use=kept.length>0?kept:values;
-      return use.reduce((a,b)=>a+b,0)/use.length;
-    }
-
-    // Calculate results keyed by production item name
-    const result={};
-    for(const pi of cfg.prod_items){
-      result[pi.name]={sec:pi.sec};
-      for(const day of DAYS){
-        result[pi.name][day]={};
-        for(const loc of LOCS){
-          const weekQtys=weekStarts.map((_,w)=>calcQtyForWeek(pi,day,loc,w));
-          let qty=smartAverage(weekQtys);
-          if(pi.sec==='kitchen')qty=qty*kitchenBuffer;
-          // Per-item multiplier overrides global — if set, use it alone; otherwise use global
-          const itemMult = cfg.item_multipliers[pi.name];
-          const effectivePct = itemMult !== undefined ? (itemMult/100) : pct;
-          qty=Math.ceil(qty*effectivePct);
-          result[pi.name][day][loc]=qty;
-        }
-      }
-    }
-
-    // ── BUILD OUTPUT IN FIXED ORDER, BLANK TOTAL CELLS ───
-    // Header row
-    const header='Item:\t'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,d]).join('\t')+'\t\tTotal:\tBellevue Total:\tWoodinville Total:\tRedmond Total:';
-
-    // Column structure: B=Red Tue, C=Bel Tue, D=Wood Tue, E=Tue Total,
-    // F-I=Wed, J-M=Thu, N-Q=Fri, R-U=Sat, V-Y=Sun, Z-AC=Mon
-    // AD=blank separator, AE=Grand Total, AF=Bel Total, AG=Wood Total, AH=Red Total
-    const DAY_COLS = [
-      {r:'B',b:'C',w:'D',t:'E'},
-      {r:'F',b:'G',w:'H',t:'I'},
-      {r:'J',b:'K',w:'L',t:'M'},
-      {r:'N',b:'O',w:'P',t:'Q'},
-      {r:'R',b:'S',w:'T',t:'U'},
-      {r:'V',b:'W',w:'X',t:'Y'},
-      {r:'Z',b:'AA',w:'AB',t:'AC'}
-    ];
-
-    // Row 2 = first retail item; kitchen starts after retail rows + 1 (Kitchen: label row)
-    const retailItems = cfg.prod_items.filter(p=>p.sec==='retail');
-    const kitchenItems = cfg.prod_items.filter(p=>p.sec==='kitchen');
-    // Row 1 = header, row 2..N+1 = retail, row N+2 = 'Kitchen:', row N+3..end = kitchen
-    const retailStartRow = 2;
-    const kitchenStartRow = retailStartRow + retailItems.length + 1;
-
-    const buildRowFormulas = (row) => {
-      const dayTotalFormulas = DAY_COLS.map(dc =>
-        '=' + dc.r + row + '+' + dc.b + row + '+' + dc.w + row
-      );
-      const grandTotal  = '=E'+row+'+I'+row+'+M'+row+'+Q'+row+'+U'+row+'+Y'+row+'+AC'+row;
-      const belTotal    = '=C'+row+'+G'+row+'+K'+row+'+O'+row+'+S'+row+'+W'+row+'+AA'+row;
-      const woodTotal   = '=D'+row+'+H'+row+'+L'+row+'+P'+row+'+T'+row+'+X'+row+'+AB'+row;
-      const redTotal    = '=B'+row+'+F'+row+'+J'+row+'+N'+row+'+R'+row+'+V'+row+'+Z'+row;
-      return { dayTotalFormulas, grandTotal, belTotal, woodTotal, redTotal };
-    };
-
-    const buildRows = (section) => {
-      const items = cfg.prod_items.filter(p=>p.sec===section);
-      const startRow = section==='retail' ? retailStartRow : kitchenStartRow;
-      return items.map((pi, idx) => {
-        const row = startRow + idx;
-        const r = result[pi.name];
-        const f = buildRowFormulas(row);
-        const cells = [];
-        for(let di=0; di<DAYS.length; di++){
-          const day = DAYS[di];
-          const rd = r ? r[day]?.Red||0 : 0;
-          const bl = r ? r[day]?.Bel||0 : 0;
-          const wd = r ? r[day]?.Wood||0 : 0;
-          cells.push(rd, bl, wd, f.dayTotalFormulas[di]);
-        }
-        cells.push('', f.grandTotal, f.belTotal, f.woodTotal, f.redTotal);
-        return pi.name + '\t' + cells.join('\t');
-      }).join('\n');
-    };
-
-        const output = [
-      header,
-      buildRows('retail'),
-      'Kitchen:',
-      buildRows('kitchen'),
-      header
-    ].join('\n');
-    document.getElementById('out-area').textContent=output;
-    document.getElementById('out-wrap').style.display='block';
-    setStatus('gen-status','Done! Blank cells preserve your Excel SUM formulas. Copy and paste.','ok');
-  }catch(e){
-    setStatus('gen-status','Error: '+e.message,'err');
+      setStatus('gen-status','Debug complete.','ok');
+    }catch(e){setStatus('gen-status','Error: '+e.message,'err');}
+    return;
   }
 }
 
-async function copyOut(){
-  const text=document.getElementById('out-area').textContent;
-  if(!text){alert('Generate output first.');return;}
-  try{ await navigator.clipboard.writeText(text); alert('Copied — paste directly into Excel.'); }
-  catch(e){ alert('Select the output text and copy manually (Ctrl+C / Cmd+C).'); }
+function copyOut(){
+  if(!Object.keys(baselineData).length){
+    setStatus('out-status','Fetch data first (Step 1).','err'); return;
+  }
+  const dir=document.getElementById('proj-direction').value;
+  if(!dir){
+    setStatus('out-status','Set a projection first (Step 2).','err'); return;
+  }
+
+  const DAY_COLS=[
+    {r:'B',b:'C',w:'D',t:'E'},{r:'F',b:'G',w:'H',t:'I'},{r:'J',b:'K',w:'L',t:'M'},
+    {r:'N',b:'O',w:'P',t:'Q'},{r:'R',b:'S',w:'T',t:'U'},{r:'V',b:'W',w:'X',t:'Y'},
+    {r:'Z',b:'AA',w:'AB',t:'AC'}
+  ];
+
+  const retailItems=cfg.prod_items.filter(p=>p.sec==='retail');
+  const kitchenItems=cfg.prod_items.filter(p=>p.sec==='kitchen');
+  const retailStartRow=2;
+  const kitchenStartRow=retailStartRow+retailItems.length+1;
+
+  const header='Item:	'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,d]).join('	')+'		Total:	Bellevue Total:	Woodinville Total:	Redmond Total:';
+
+  const buildRows=(items,startRow)=>items.map((pi,idx)=>{
+    const row=startRow+idx;
+    const cells=[];
+    for(let di=0;di<DAYS.length;di++){
+      const day=DAYS[di]; const dc=DAY_COLS[di];
+      cells.push(
+        getFinalQty(pi.name,day,'Red'),
+        getFinalQty(pi.name,day,'Bel'),
+        getFinalQty(pi.name,day,'Wood'),
+        `=`+dc.r+row+`+`+dc.b+row+`+`+dc.w+row
+      );
+    }
+    const r=row;
+    cells.push(
+      '',
+      `=E${r}+I${r}+M${r}+Q${r}+U${r}+Y${r}+AC${r}`,
+      `=C${r}+G${r}+K${r}+O${r}+S${r}+W${r}+AA${r}`,
+      `=D${r}+H${r}+L${r}+P${r}+T${r}+X${r}+AB${r}`,
+      `=B${r}+F${r}+J${r}+N${r}+R${r}+V${r}+Z${r}`
+    );
+    return pi.name+'	'+cells.join('	');
+  }).join('
+');
+
+  const output=[header,buildRows(retailItems,retailStartRow),'Kitchen:',buildRows(kitchenItems,kitchenStartRow),header].join('
+');
+  navigator.clipboard.writeText(output).then(()=>{
+    setStatus('out-status','Copied! Paste into Excel starting at cell A1 (or A2 if row 1 has headers).','ok');
+  }).catch(()=>{
+    setStatus('out-status','Copy failed — select all and copy manually.','err');
+  });
 }
 
 // ── IMPORT SETTINGS ──────────────────────────────────────
@@ -1007,57 +1193,6 @@ async function importSettings(input) {
   };
   reader.readAsText(file);
   input.value='';
-}
-
-// ── PER-ITEM MULTIPLIERS ──────────────────────────────────
-function renderItemMultipliers() {
-  const el = document.getElementById('item-multipliers-list');
-  if(!el) return;
-  const allItems = [...RETAIL_ORDER, ...KITCHEN_ORDER];
-  el.innerHTML = '<table class="tbl"><thead><tr><th>Item</th><th>Section</th><th style="width:140px">Multiplier %</th><th style="width:80px">Effective</th></tr></thead><tbody>' +
-    allItems.map(name => {
-      const sec = KITCHEN_ORDER.includes(name) && !RETAIL_ORDER.includes(name) ? 'kitchen' : 'retail';
-      const val = cfg.item_multipliers[name] !== undefined ? cfg.item_multipliers[name] : '';
-      const globalPct = parseInt(document.getElementById('pct-slider')?.value||100);
-      const effective = val !== '' ? parseFloat(val) + '% (override)' : globalPct + '% (global)';
-      return `<tr>
-        <td>${name}</td>
-        <td><span class="badge ${sec==='kitchen'?'bpurp':'binfo'}">${sec}</span></td>
-        <td>
-          <div style="display:flex;align-items:center;gap:6px">
-            <input type="number" min="0" max="300" step="5"
-              value="${val}"
-              placeholder="global"
-              style="width:80px;font-size:13px;text-align:right"
-              oninput="updateItemMultiplier('${name.replace(/'/g,"\'")}',this.value)"
-            />
-            <span style="font-size:12px;color:var(--text2)">%</span>
-            ${val!==''?`<button class="btn btnsm" onclick="clearItemMultiplier('${name.replace(/'/g,"\'")}')" title="Reset to global">✕</button>`:''}
-          </div>
-        </td>
-        <td style="font-size:13px;font-weight:600;color:${val!==''?'var(--info)':'var(--text3)'}">${effective}</td>
-      </tr>`;
-    }).join('') + '</tbody></table>';
-}
-
-function updateItemMultiplier(name, val) {
-  const num = parseFloat(val);
-  if(val===''||isNaN(num)){
-    delete cfg.item_multipliers[name];
-  } else {
-    cfg.item_multipliers[name] = num;
-  }
-  // Debounce save
-  clearTimeout(window._multTimer);
-  window._multTimer = setTimeout(()=>saveConfigField('item_multipliers', cfg.item_multipliers), 800);
-  // Refresh effective column
-  renderItemMultipliers();
-}
-
-function clearItemMultiplier(name) {
-  delete cfg.item_multipliers[name];
-  saveConfigField('item_multipliers', cfg.item_multipliers);
-  renderItemMultipliers();
 }
 
 // ── BOOT ─────────────────────────────────────────────────
