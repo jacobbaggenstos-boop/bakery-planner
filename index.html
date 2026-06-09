@@ -1097,10 +1097,7 @@ async function generate(debugMode=false){
       const orders=await fetchOrders(locRed,tues.toISOString(),end.toISOString());
       const{counts}=aggregateOrders(orders);
       const lines=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([n,q])=>`${q.toString().padStart(4)}  ${n}`);
-      document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME
-'+'─'.repeat(60)+'
-'+lines.join('
-'):'No orders found.';
+      document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME\n'+'─'.repeat(60)+'\n'+lines.join('\n'):'No orders found.';
       document.getElementById('debug-wrap').style.display='block';
       setStatus('gen-status','Debug complete.','ok');
     }catch(e){setStatus('gen-status','Error: '+e.message,'err');}
@@ -1150,12 +1147,10 @@ function copyOut(){
       `=D${r}+H${r}+L${r}+P${r}+T${r}+X${r}+AB${r}`,
       `=B${r}+F${r}+J${r}+N${r}+R${r}+V${r}+Z${r}`
     );
-    return pi.name+'	'+cells.join('	');
-  }).join('
-');
+    return pi.name+'\t'+cells.join('\t');
+  }).join('\n');
 
-  const output=[header,buildRows(retailItems,retailStartRow),'Kitchen:',buildRows(kitchenItems,kitchenStartRow),header].join('
-');
+  const output=[header,buildRows(retailItems,retailStartRow),'Kitchen:',buildRows(kitchenItems,kitchenStartRow),header].join('\n');
   navigator.clipboard.writeText(output).then(()=>{
     setStatus('out-status','Copied! Paste into Excel starting at cell A1 (or A2 if row 1 has headers).','ok');
   }).catch(()=>{
