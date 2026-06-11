@@ -913,7 +913,7 @@ async function fetchOosEvents(locId, dateObj) {
 
       let r, d;
       try {
-        r = await fetch(sqUrl('/v2/inventory/changes'), {method:'POST', headers: sqH(), body: JSON.stringify(body)});
+        r = await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'), {method:'POST', headers: sqH(), body: JSON.stringify(body)});
         d = await r.json();
       } catch(e) { break; }
       if(d.errors) break;
@@ -1305,60 +1305,53 @@ async function debugOos(){
   const end=new Date(tues); end.setDate(end.getDate()+1);
   const startISO=tues.toISOString(), endISO=end.toISOString();
 
-  // Fetch first chunk only (up to 10 IDs) so response is readable
   const chunk=varIds.slice(0,10);
   const body={catalog_object_ids:chunk, location_ids:[locRed], updated_after:startISO, updated_before:endISO};
+  const lines=[];
 
-  try{
-    const r=await fetch(sqUrl('/v2/inventory/changes'),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
-    const d=await r.json();
+  // Try both known Square inventory endpoint paths
+  const endpoints = [
+    '/v2/inventory/batch-retrieve-changes',
+    '/v2/inventory/changes',
+  ];
 
-    const lines=[];
-    lines.push('=== RAW RESPONSE (first 10 variation IDs) ===');
-    lines.push('HTTP status: '+r.status);
-    lines.push('');
-
-    if(d.errors){
-      lines.push('ERRORS:');
-      for(const e of d.errors) lines.push('  '+e.category+' / '+e.code+': '+e.detail);
-    } else {
-      const changes=d.changes||[];
-      lines.push(`Total changes returned: ${changes.length}`);
-      if(changes.length===0){
-        lines.push('');
-        lines.push('No changes found for this date/location. Possible reasons:');
-        lines.push('  • Items were not 86\'d on this day');
-        lines.push('  • updated_after/updated_before filters may not match Square\'s field');
-        lines.push('  • The inventory change endpoint may use a different filter name');
-        lines.push('');
-        lines.push('Full raw response:');
-        lines.push(JSON.stringify(d, null, 2));
+  for(const ep of endpoints){
+    lines.push(`=== Trying: POST ${ep} ===`);
+    try{
+      const r=await fetch(sqUrl(ep),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
+      const d=await r.json();
+      lines.push('HTTP status: '+r.status);
+      if(d.errors){
+        for(const e of d.errors) lines.push('  ERROR: '+e.category+' / '+e.code+': '+e.detail);
       } else {
-        lines.push('');
-        lines.push('Change types present: '+[...new Set(changes.map(c=>c.type))].join(', '));
-        lines.push('');
-        lines.push('ALL CHANGES:');
-        for(const c of changes){
-          lines.push('─'.repeat(50));
-          lines.push('  type: '+c.type);
-          // Dump all top-level keys of the change
-          for(const [k,v] of Object.entries(c)){
-            if(k==='type') continue;
-            lines.push('  '+k+': '+JSON.stringify(v));
+        const changes=d.changes||[];
+        lines.push(`Changes returned: ${changes.length}`);
+        if(changes.length){
+          lines.push('Types present: '+[...new Set(changes.map(c=>c.type))].join(', '));
+          lines.push('');
+          lines.push('First change (full JSON):');
+          lines.push(JSON.stringify(changes[0], null, 2));
+          lines.push('');
+          lines.push('All changes summary:');
+          for(const c of changes){
+            const adj=c.adjustment||c.physical_count||{};
+            lines.push(`  type=${c.type} from=${adj.from_state} to=${adj.to_state} item=${adj.catalog_object_id} time=${adj.occurred_at||adj.created_at||'?'}`);
           }
+        } else {
+          lines.push('(no changes — but endpoint accepted the request)');
+          lines.push('Full response: '+JSON.stringify(d, null, 2));
         }
-        lines.push('');
-        lines.push('FULL JSON (first change):');
-        lines.push(JSON.stringify(changes[0], null, 2));
       }
+    } catch(e){
+      lines.push('Fetch error: '+e.message);
     }
-
-    areaEl.textContent=lines.join('\n');
-    wrapEl.style.display='block';
-    setStatus('gen-status','OOS debug complete — check output below.','ok');
-  } catch(e){
-    setStatus('gen-status','Error: '+e.message,'err');
+    lines.push('');
   }
+
+  const areaEl=document.getElementById('debug-oos-area');
+  const wrapEl=document.getElementById('debug-oos-wrap');
+  areaEl.textContent=lines.join('\n');
+  wrapEl.style.display='block';
 }
 
 function copyOut(){
