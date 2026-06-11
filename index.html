@@ -880,11 +880,11 @@ function calcOosAddition(hourlyData,soldOutTime,openTime,closeTime){
 
 // ── OOS AUTO-DETECT via Square Inventory API ──────────────
 // Returns { itemDisplayName: 'HH:MM' } for all items 86'd on this date at this location.
-// Uses the earliest OUT_OF_STOCK transition found for each item variation.
+// Pulls all inventory changes for known variations (no server-side date filter — Square
+// doesn't support it on this endpoint) and filters by occurred_at in JS.
 async function fetchOosEvents(locId, dateObj) {
-  const startISO = new Date(dateObj).toISOString();
-  const endDate = new Date(dateObj); endDate.setDate(endDate.getDate()+1);
-  const endISO = endDate.toISOString();
+  const dayStart = new Date(dateObj); dayStart.setHours(0,0,0,0);
+  const dayEnd   = new Date(dateObj); dayEnd.setHours(23,59,59,999);
 
   // Build reverse map: variationId -> displayName
   const varToName = {};
@@ -896,19 +896,12 @@ async function fetchOosEvents(locId, dateObj) {
 
   const result = {};
 
-  // Square's RetrieveInventoryChanges paginates; batch by variation ID
-  // Process in chunks of 100 to stay within query limits
   const CHUNK = 100;
   for(let i=0; i<varIds.length; i+=CHUNK){
     const chunk = varIds.slice(i, i+CHUNK);
     let cursor = null;
     do {
-      const body = {
-        catalog_object_ids: chunk,
-        location_ids: [locId],
-        updated_after: startISO,
-        updated_before: endISO,
-      };
+      const body = { catalog_object_ids: chunk, location_ids: [locId] };
       if(cursor) body.cursor = cursor;
 
       let r, d;
@@ -919,18 +912,20 @@ async function fetchOosEvents(locId, dateObj) {
       if(d.errors) break;
 
       for(const change of d.changes||[]){
-        // We want manual 86 events: to_state = OUT_OF_STOCK
+        // 86'ing at POS records IN_STOCK → SOLD (not OUT_OF_STOCK)
         if(change.type !== 'ADJUSTMENT') continue;
-        if(change.adjustment?.to_state !== 'OUT_OF_STOCK') continue;
-        const varId = change.adjustment?.catalog_object_id;
+        const adj = change.adjustment;
+        if(adj?.to_state !== 'SOLD') continue;
+        const varId = adj?.catalog_object_id;
         const name = varToName[varId];
         if(!name) continue;
-        // Parse timestamp to HH:MM local time
-        const ts = change.adjustment?.occurred_at||change.adjustment?.created_at;
+        // Filter to the target day by occurred_at
+        const ts = adj.occurred_at || adj.created_at;
         if(!ts) continue;
         const t = new Date(ts);
+        if(t < dayStart || t > dayEnd) continue;
         const hhmm = t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
-        // Keep the earliest OOS time for the day
+        // Keep the earliest SOLD time for the day
         if(!result[name] || hhmm < result[name]) result[name] = hhmm;
       }
       cursor = d.cursor||null;
@@ -1302,65 +1297,48 @@ async function debugOos(){
 
   setStatus('gen-status','<span class="spin"></span> Fetching raw OOS data…','info');
   const tues=getLastNWeekdays(2,1)[0];
-  const end=new Date(tues); end.setDate(end.getDate()+1);
-  const startISO=tues.toISOString(), endISO=end.toISOString();
+  const dayStart=new Date(tues); dayStart.setHours(0,0,0,0);
+  const dayEnd=new Date(tues); dayEnd.setHours(23,59,59,999);
 
   const chunk=varIds.slice(0,10);
   const lines=[];
-  lines.push(`Date range: ${startISO} → ${endISO}`);
-  lines.push(`Location: ${locRed}`);
-  lines.push(`Variation IDs (first 10): ${chunk.join(', ')}`);
+  lines.push(`Checking: ${dayStart.toDateString()} at ${LOC_LABEL['Red']||locRed}`);
+  lines.push(`Variation IDs sampled: ${chunk.length} of ${varIds.length} total`);
   lines.push('');
 
-  // Try different body shapes — Square's docs are inconsistent about field names
-  const EP = '/v2/inventory/batch-retrieve-changes';
-  const bodies = [
-    { label:'updated_after/before (flat)',
-      body:{catalog_object_ids:chunk, location_ids:[locRed], updated_after:startISO, updated_before:endISO} },
-    { label:'created_after/before (flat)',
-      body:{catalog_object_ids:chunk, location_ids:[locRed], created_after:startISO, created_before:endISO} },
-    { label:'no date filter (all changes for these items)',
-      body:{catalog_object_ids:chunk, location_ids:[locRed]} },
-    { label:'no location or date filter (all changes ever for these items)',
-      body:{catalog_object_ids:chunk} },
-  ];
-
-  for(const {label, body} of bodies){
-    lines.push(`=== ${label} ===`);
-    try{
-      const r=await fetch(sqUrl(EP),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
-      const d=await r.json();
-      lines.push('HTTP status: '+r.status);
-      if(d.errors){
-        for(const e of d.errors) lines.push('  ERROR: '+e.category+' / '+e.code+': '+e.detail);
+  try{
+    const r=await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'),{method:'POST',headers:sqH(),body:JSON.stringify({catalog_object_ids:chunk,location_ids:[locRed]})});
+    const d=await r.json();
+    lines.push('HTTP status: '+r.status);
+    if(d.errors){
+      for(const e of d.errors) lines.push('ERROR: '+e.category+'/'+e.code+': '+e.detail);
+    } else {
+      const all=d.changes||[];
+      const dayChanges=all.filter(c=>{
+        const ts=c.adjustment?.occurred_at||c.adjustment?.created_at;
+        if(!ts) return false;
+        const t=new Date(ts);
+        return t>=dayStart && t<=dayEnd;
+      });
+      lines.push(`All-time changes for these items: ${all.length}`);
+      lines.push(`Changes on this day: ${dayChanges.length}`);
+      lines.push(`to_states seen (all time): ${[...new Set(all.map(c=>c.adjustment?.to_state).filter(Boolean))].join(', ')}`);
+      lines.push('');
+      if(dayChanges.length){
+        lines.push('Day changes:');
+        for(const c of dayChanges){
+          const adj=c.adjustment||{};
+          lines.push(`  ${adj.occurred_at||adj.created_at}  ${adj.from_state} → ${adj.to_state}  item=${adj.catalog_object_id}`);
+        }
       } else {
-        const changes=d.changes||[];
-        lines.push(`Changes returned: ${changes.length}`);
-        if(changes.length){
-          lines.push('Types present: '+[...new Set(changes.map(c=>c.type))].join(', '));
-          lines.push('to_states present: '+[...new Set(changes.map(c=>(c.adjustment||{}).to_state).filter(Boolean))].join(', '));
-          lines.push('');
-          lines.push('First change (full JSON):');
-          lines.push(JSON.stringify(changes[0], null, 2));
-          lines.push('');
-          lines.push('All changes summary:');
-          for(const c of changes){
-            const adj=c.adjustment||c.physical_count||{};
-            lines.push(`  type=${c.type} from=${adj.from_state||'?'} to=${adj.to_state||'?'} item=${adj.catalog_object_id||'?'} time=${adj.occurred_at||adj.created_at||'?'}`);
-          }
-          // Stop trying once we find changes
-          lines.push(''); lines.push('^^^ THIS BODY SHAPE WORKS ^^^');
-          break;
-        } else {
-          lines.push('(no changes returned)');
-          if(Object.keys(d).length) lines.push('Other keys in response: '+Object.keys(d).join(', '));
+        lines.push('No changes on this day. Recent changes (last 5):');
+        for(const c of all.slice(-5)){
+          const adj=c.adjustment||{};
+          lines.push(`  ${adj.occurred_at||adj.created_at}  ${adj.from_state} → ${adj.to_state}  item=${adj.catalog_object_id}`);
         }
       }
-    } catch(e){
-      lines.push('Fetch error: '+e.message);
     }
-    lines.push('');
-  }
+  } catch(e){ lines.push('Fetch error: '+e.message); }
 
   areaEl.textContent=lines.join('\n');
   wrapEl.style.display='block';
