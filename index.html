@@ -1290,9 +1290,9 @@ async function debugOos(){
   const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
   if(!locRed){setStatus('gen-status','Add Redmond location ID.','err');return;}
 
-  const varIds=Object.values(cfg.catalog_variations);
   const areaEl=document.getElementById('debug-oos-area');
   const wrapEl=document.getElementById('debug-oos-wrap');
+  const varIds=Object.values(cfg.catalog_variations);
 
   if(!varIds.length){
     areaEl.textContent='No variation IDs found. Run "Sync from Square" in the Catalog tab first, then re-fetch.';
@@ -1348,8 +1348,6 @@ async function debugOos(){
     lines.push('');
   }
 
-  const areaEl=document.getElementById('debug-oos-area');
-  const wrapEl=document.getElementById('debug-oos-wrap');
   areaEl.textContent=lines.join('\n');
   wrapEl.style.display='block';
 }
