@@ -1306,19 +1306,29 @@ async function debugOos(){
   const startISO=tues.toISOString(), endISO=end.toISOString();
 
   const chunk=varIds.slice(0,10);
-  const body={catalog_object_ids:chunk, location_ids:[locRed], updated_after:startISO, updated_before:endISO};
   const lines=[];
+  lines.push(`Date range: ${startISO} → ${endISO}`);
+  lines.push(`Location: ${locRed}`);
+  lines.push(`Variation IDs (first 10): ${chunk.join(', ')}`);
+  lines.push('');
 
-  // Try both known Square inventory endpoint paths
-  const endpoints = [
-    '/v2/inventory/batch-retrieve-changes',
-    '/v2/inventory/changes',
+  // Try different body shapes — Square's docs are inconsistent about field names
+  const EP = '/v2/inventory/batch-retrieve-changes';
+  const bodies = [
+    { label:'updated_after/before (flat)',
+      body:{catalog_object_ids:chunk, location_ids:[locRed], updated_after:startISO, updated_before:endISO} },
+    { label:'created_after/before (flat)',
+      body:{catalog_object_ids:chunk, location_ids:[locRed], created_after:startISO, created_before:endISO} },
+    { label:'no date filter (all changes for these items)',
+      body:{catalog_object_ids:chunk, location_ids:[locRed]} },
+    { label:'no location or date filter (all changes ever for these items)',
+      body:{catalog_object_ids:chunk} },
   ];
 
-  for(const ep of endpoints){
-    lines.push(`=== Trying: POST ${ep} ===`);
+  for(const {label, body} of bodies){
+    lines.push(`=== ${label} ===`);
     try{
-      const r=await fetch(sqUrl(ep),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
+      const r=await fetch(sqUrl(EP),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
       const d=await r.json();
       lines.push('HTTP status: '+r.status);
       if(d.errors){
@@ -1328,6 +1338,7 @@ async function debugOos(){
         lines.push(`Changes returned: ${changes.length}`);
         if(changes.length){
           lines.push('Types present: '+[...new Set(changes.map(c=>c.type))].join(', '));
+          lines.push('to_states present: '+[...new Set(changes.map(c=>(c.adjustment||{}).to_state).filter(Boolean))].join(', '));
           lines.push('');
           lines.push('First change (full JSON):');
           lines.push(JSON.stringify(changes[0], null, 2));
@@ -1335,11 +1346,14 @@ async function debugOos(){
           lines.push('All changes summary:');
           for(const c of changes){
             const adj=c.adjustment||c.physical_count||{};
-            lines.push(`  type=${c.type} from=${adj.from_state} to=${adj.to_state} item=${adj.catalog_object_id} time=${adj.occurred_at||adj.created_at||'?'}`);
+            lines.push(`  type=${c.type} from=${adj.from_state||'?'} to=${adj.to_state||'?'} item=${adj.catalog_object_id||'?'} time=${adj.occurred_at||adj.created_at||'?'}`);
           }
+          // Stop trying once we find changes
+          lines.push(''); lines.push('^^^ THIS BODY SHAPE WORKS ^^^');
+          break;
         } else {
-          lines.push('(no changes — but endpoint accepted the request)');
-          lines.push('Full response: '+JSON.stringify(d, null, 2));
+          lines.push('(no changes returned)');
+          if(Object.keys(d).length) lines.push('Other keys in response: '+Object.keys(d).join(', '));
         }
       }
     } catch(e){
