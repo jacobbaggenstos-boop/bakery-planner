@@ -52,6 +52,7 @@ input[type=range]{accent-color:var(--text)}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500}
 .bwarn{background:var(--warn-bg);color:var(--warn)}.bok{background:var(--ok-bg);color:var(--ok)}
 .binfo{background:var(--info-bg);color:var(--info)}.bpurp{background:var(--purp-bg);color:var(--purp)}
+.berr{background:var(--err-bg);color:var(--err)}
 .status{font-size:13px;padding:10px 14px;border-radius:var(--radius);margin-bottom:14px}
 .sinfo{background:var(--info-bg);color:var(--info)}.serr{background:var(--err-bg);color:var(--err)}
 .sok{background:var(--ok-bg);color:var(--ok)}.swarn{background:var(--warn-bg);color:var(--warn)}
@@ -213,6 +214,10 @@ input[type=range]{accent-color:var(--text)}
       <div class="card">
         <div class="card-title">Out-of-stock events</div>
         <div class="hint">Log mid-day sellouts per location. The tool uses that item's actual hourly sales curve from Square to estimate missed sales. OOS data is tied to the selected week.</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <label style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Week of (Tuesday)</label>
+          <input type="date" id="week-start" style="width:160px;font-size:13px" onchange="reloadOosWeek()"/>
+        </div>
         <div class="day-tabs" id="oos-days"></div>
         <div class="loc-tabs" id="oos-locs"></div>
         <div id="oos-list"></div>
@@ -392,8 +397,8 @@ async function loadConfig(){
     if(!oosData[key]) oosData[key]=[];
     oosData[key].push({name:row.item_name, time:row.sold_out_time, id:row.id});
   }
-  // Square token is local-only (personal)
-  try{ document.getElementById('sq-token').value = localStorage.getItem('bpp_sq_token')||''; }catch(e){}
+  // Square token is shared via Supabase (same as other config fields)
+  // No localStorage read needed; it was loaded above from cfg.sq_token
 }
 
 function saveSharedToken(){
@@ -689,6 +694,18 @@ function renderOosDays(){ document.getElementById('oos-days').innerHTML=DAYS.map
 function renderOosLocs(){ document.getElementById('oos-locs').innerHTML=LOCS.map(l=>`<button class="ltab${l===curOosLoc?' active':''}" onclick="switchOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join(''); }
 function switchOosDay(d){ curOosDay=d; renderOosDays(); renderOosList(); }
 function switchOosLoc(l){ curOosLoc=l; renderOosLocs(); renderOosList(); }
+
+async function reloadOosWeek(){
+  const weekStart=document.getElementById('week-start').value||getDefaultWeekStart();
+  const { data: oosRows } = await sb.from('bakery_oos').select('*').eq('week_start', weekStart);
+  oosData = {};
+  for(const row of oosRows||[]){
+    const key = row.day_name+'|'+row.loc_key;
+    if(!oosData[key]) oosData[key]=[];
+    oosData[key].push({name:row.item_name, time:row.sold_out_time, id:row.id});
+  }
+  renderOosList();
+}
 
 function renderOosList(){
   const key=curOosDay+'|'+curOosLoc;
