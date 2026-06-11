@@ -903,18 +903,17 @@ async function fetchOosEvents(locId, dateObj) {
     const chunk = varIds.slice(i, i+CHUNK);
     let cursor = null;
     do {
-      const params = new URLSearchParams({
-        location_ids: locId,
+      const body = {
+        catalog_object_ids: chunk,
+        location_ids: [locId],
         updated_after: startISO,
         updated_before: endISO,
-      });
-      // catalog_object_ids is repeated per item
-      for(const id of chunk) params.append('catalog_object_ids', id);
-      if(cursor) params.set('cursor', cursor);
+      };
+      if(cursor) body.cursor = cursor;
 
       let r, d;
       try {
-        r = await fetch(sqUrl('/v2/inventory/changes?'+params.toString()), {headers: sqH()});
+        r = await fetch(sqUrl('/v2/inventory/changes'), {method:'POST', headers: sqH(), body: JSON.stringify(body)});
         d = await r.json();
       } catch(e) { break; }
       if(d.errors) break;
@@ -1308,11 +1307,10 @@ async function debugOos(){
 
   // Fetch first chunk only (up to 10 IDs) so response is readable
   const chunk=varIds.slice(0,10);
-  const params=new URLSearchParams({location_ids:locRed, updated_after:startISO, updated_before:endISO});
-  for(const id of chunk) params.append('catalog_object_ids',id);
+  const body={catalog_object_ids:chunk, location_ids:[locRed], updated_after:startISO, updated_before:endISO};
 
   try{
-    const r=await fetch(sqUrl('/v2/inventory/changes?'+params.toString()),{headers:sqH()});
+    const r=await fetch(sqUrl('/v2/inventory/changes'),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
     const d=await r.json();
 
     const lines=[];
