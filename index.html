@@ -169,11 +169,12 @@ input[type=range]{accent-color:var(--text)}
       </div>
       <div class="card">
         <div class="card-title">Production items <span class="badge bpurp">what your kitchen bakes</span></div>
-        <div class="hint">Add every item your bakery produces. Mark as Retail or Kitchen — kitchen items get the buffer applied.</div>
+        <div class="hint">Add every item your bakery produces. Mark as Retail or Kitchen — kitchen items get the buffer applied. The <strong>OOS cutoff</strong> is the latest acceptable sellout time — items 86'd after this time won't have missed sales added.</div>
         <div id="prod-items-list"></div>
         <div class="add-row">
           <div class="fg"><label>Name</label><input type="text" id="new-prod" placeholder="e.g. Baguette" onkeydown="if(event.key==='Enter')addProdItem()"/></div>
           <div class="fg" style="max-width:130px"><label>Section</label><select id="new-prod-sec"><option value="retail">Retail</option><option value="kitchen">Kitchen</option></select></div>
+          <div class="fg" style="max-width:120px"><label>OOS cutoff</label><input type="time" id="new-prod-cutoff" value="14:00"/></div>
           <button class="btn btnp" style="align-self:flex-end" onclick="addProdItem()">+ Add</button>
         </div>
       </div>
@@ -212,19 +213,22 @@ input[type=range]{accent-color:var(--text)}
     <!-- OOS -->
     <div id="tab-oos" class="panel">
       <div class="card">
-        <div class="card-title">Out-of-stock events</div>
-        <div class="hint">Log mid-day sellouts per location. The tool uses that item's actual hourly sales curve from Square to estimate missed sales. OOS data is tied to the selected week.</div>
+        <div class="card-title">Out-of-stock events <span class="badge binfo">auto-detected from Square</span></div>
+        <div class="hint">OOS times are pulled automatically from Square's inventory 86 events when you fetch data on the Generate tab. Items 86'd after their OOS cutoff time are shown but <em>not</em> adjusted — that's an acceptable sellout. Manual overrides below take priority over auto-detected times.</div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
           <label style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Week of (Tuesday)</label>
           <input type="date" id="week-start" style="width:160px;font-size:13px" onchange="reloadOosWeek()"/>
         </div>
         <div class="day-tabs" id="oos-days"></div>
         <div class="loc-tabs" id="oos-locs"></div>
+        <div id="auto-oos-list"></div>
+        <div class="sec-label" style="margin-top:16px">Manual overrides</div>
+        <div class="hint" style="margin-bottom:8px">Use these only if auto-detection missed something or pulled the wrong time.</div>
         <div id="oos-list"></div>
-        <button class="btn" style="margin-top:12px" onclick="addOosEntry()">+ Add item</button>
+        <button class="btn" style="margin-top:12px" onclick="addOosEntry()">+ Add manual override</button>
       </div>
       <div class="info-box">
-        <strong style="color:var(--text)">How the hourly curve works:</strong> The tool fetches that item's actual sales by hour from Square. It calculates what fraction of the day's sales typically happen after the sellout time, then adds that fraction as estimated missed units.
+        <strong style="color:var(--text)">How the missed-sales estimate works:</strong> When an item is 86'd before its OOS cutoff, the tool looks at that item's actual hourly sales curve and estimates what fraction of remaining sales were missed. That estimate is added to the raw sales count before averaging. Items 86'd after the cutoff are left unadjusted — you <em>want</em> to sell out by then.
       </div>
     </div>
 
@@ -324,7 +328,10 @@ const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let cfg = { catalog:[], prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{} };
+let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{} };
+// autoOosData: populated during fetchData, never persisted to Supabase
+// structure: { 'dayName|locKey': { itemName: 'HH:MM' } }
+let autoOosData = {};
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red';
 let orderQtys = {};
@@ -376,6 +383,7 @@ async function loadConfig(){
   const { data } = await sb.from('bakery_config').select('*').eq('id','main').single();
   if(data){
     cfg.catalog = data.catalog||[];
+    cfg.catalog_variations = data.catalog_variations||{};
     cfg.prod_items = data.prod_items||[];
     cfg.rels = data.rels||[];
     cfg.proxy_url = data.proxy_url||'';
@@ -421,7 +429,7 @@ function applyConfig(){
   document.getElementById('open-time').value = cfg.open_time;
   document.getElementById('close-time').value = cfg.close_time;
   renderProdItems(); renderRels(); renderCatalogGrid();
-  renderOosDays(); renderOosLocs(); renderOosList();
+  renderOosDays(); renderOosLocs(); renderAutoOosList(); renderOosList();
   updateRelProdSelect();
   if(cfg.catalog.length) document.getElementById('catalog-count').textContent = cfg.catalog.length+' items';
   // Set default week start
@@ -506,7 +514,7 @@ async function syncCatalog(){
   if(!token()){setStatus('catalog-status','Enter your Square token first.','err');return;}
   setStatus('catalog-status','<span class="spin"></span> Fetching catalog…','info');
   try{
-    let items=[],cursor=null;
+    let items=[],variations={},cursor=null;
     do{
       const url=sqUrl('/v2/catalog/list?types=ITEM')+(cursor?'&cursor='+cursor:'');
       const r=await fetch(url,{headers:sqH()});
@@ -519,19 +527,27 @@ async function syncCatalog(){
             if(obj.item_data.variations&&obj.item_data.variations.length>1){
               for(const v of obj.item_data.variations){
                 const vn=v.item_variation_data?.name;
-                items.push(vn&&vn.toLowerCase()!=='regular'?`${base} — ${vn}`:base);
+                const displayName=vn&&vn.toLowerCase()!=='regular'?`${base} — ${vn}`:base;
+                items.push(displayName);
+                if(v.id) variations[displayName]=v.id;
               }
-            } else { items.push(base); }
+            } else {
+              items.push(base);
+              const v=obj.item_data.variations?.[0];
+              if(v?.id) variations[base]=v.id;
+            }
           }
         }
       }
       cursor=d.cursor||null;
     } while(cursor);
     cfg.catalog=[...new Set(items)].sort();
+    cfg.catalog_variations=variations;
     await saveConfigField('catalog', cfg.catalog);
+    await saveConfigField('catalog_variations', cfg.catalog_variations);
     renderCatalogGrid();
     document.getElementById('catalog-count').textContent=cfg.catalog.length+' items synced';
-    setStatus('catalog-status','Synced — '+cfg.catalog.length+' items.','ok');
+    setStatus('catalog-status','Synced — '+cfg.catalog.length+' items (variation IDs captured for OOS detection).','ok');
   } catch(e){ setStatus('catalog-status','Failed: '+e.message,'err'); }
 }
 
@@ -546,9 +562,10 @@ function renderCatalogGrid(){
 function addProdItem(){
   const name=document.getElementById('new-prod').value.trim();
   const sec=document.getElementById('new-prod-sec').value;
+  const oos_cutoff=document.getElementById('new-prod-cutoff').value||'14:00';
   if(!name)return;
   if(cfg.prod_items.find(p=>p.name.toLowerCase()===name.toLowerCase())){alert('Already exists.');return;}
-  cfg.prod_items.push({name,sec});
+  cfg.prod_items.push({name,sec,oos_cutoff});
   saveConfigField('prod_items',cfg.prod_items);
   document.getElementById('new-prod').value='';
   renderProdItems(); updateRelProdSelect();
@@ -562,6 +579,11 @@ function removeProdItem(i){
   saveConfigField('prod_items',cfg.prod_items);
   saveConfigField('rels',cfg.rels);
   renderProdItems(); renderRels(); updateRelProdSelect();
+}
+
+function setProdCutoff(i, val){
+  cfg.prod_items[i].oos_cutoff = val;
+  saveConfigField('prod_items', cfg.prod_items);
 }
 
 function renderProdItems(){
@@ -582,6 +604,7 @@ function renderProdItems(){
     s+=items.map(p=>{
       const i=cfg.prod_items.indexOf(p);
       const count=cfg.rels.filter(r=>r.prod===p.name).length;
+      const cutoff=p.oos_cutoff||'14:00';
       return `<div class="drag-row" draggable="true" data-index="${i}" data-sec="${p.sec}"
         style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:0.5px solid var(--border);background:var(--bg);cursor:default"
         ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="dragDrop(event)" ondragend="dragEnd(event)">
@@ -589,6 +612,11 @@ function renderProdItems(){
         <span style="flex:1;font-size:13px;font-weight:500">${p.name}</span>
         <span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}" style="flex-shrink:0">${p.sec}</span>
         <span style="font-size:12px;color:var(--text2);min-width:60px">${count} rel${count!==1?'s':''}</span>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0" title="OOS cutoff — sellouts after this time won't add missed sales">
+          <span style="font-size:11px;color:var(--text3)">cutoff</span>
+          <input type="time" value="${cutoff}" style="width:90px;font-size:12px;padding:3px 6px"
+            onchange="setProdCutoff(${i},this.value)" onclick="event.stopPropagation()"/>
+        </div>
         <button class="btn btnsm" onclick="removeProdItem(${i})" style="flex-shrink:0">✕</button>
       </div>`;
     }).join('');
@@ -692,8 +720,43 @@ function renderRels(){
 // ── OOS ───────────────────────────────────────────────────
 function renderOosDays(){ document.getElementById('oos-days').innerHTML=DAYS.map(d=>`<button class="dtab${d===curOosDay?' active':''}" onclick="switchOosDay('${d}')">${d.slice(0,3)}</button>`).join(''); }
 function renderOosLocs(){ document.getElementById('oos-locs').innerHTML=LOCS.map(l=>`<button class="ltab${l===curOosLoc?' active':''}" onclick="switchOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join(''); }
-function switchOosDay(d){ curOosDay=d; renderOosDays(); renderOosList(); }
-function switchOosLoc(l){ curOosLoc=l; renderOosLocs(); renderOosList(); }
+function switchOosDay(d){ curOosDay=d; renderOosDays(); renderAutoOosList(); renderOosList(); }
+function switchOosLoc(l){ curOosLoc=l; renderOosLocs(); renderAutoOosList(); renderOosList(); }
+
+function renderAutoOosList(){
+  const el=document.getElementById('auto-oos-list');
+  if(!el) return;
+  const key=curOosDay+'|'+curOosLoc;
+  const autoItems=autoOosData[key]||{};
+  const entries=Object.entries(autoItems);
+  if(!entries.length){
+    el.innerHTML=`<p class="empty" style="text-align:left;padding:10px 0">No auto-detected OOS events for ${curOosDay} at ${LOC_LABEL[curOosLoc]}. Fetch data on the Generate tab to populate this.</p>`;
+    return;
+  }
+  const closeTime=cfg.close_time||'17:00';
+  let html='<table class="tbl"><thead><tr><th>Item</th><th>86\'d at</th><th>OOS cutoff</th><th>Status</th></tr></thead><tbody>';
+  for(const [name, time] of entries.sort((a,b)=>a[0].localeCompare(b[0]))){
+    const pi=cfg.prod_items.find(p=>p.name===name);
+    const cutoff=pi?.oos_cutoff||'23:59';
+    const manualOverride=(oosData[key]||[]).find(o=>o.name===name);
+    let statusBadge, statusNote;
+    if(manualOverride){
+      statusBadge='bpurp'; statusNote=`manual override (${manualOverride.time})`;
+    } else if(time>=cutoff){
+      statusBadge='bok'; statusNote='after cutoff — no adjustment';
+    } else {
+      statusBadge='bwarn'; statusNote='missed sales added';
+    }
+    html+=`<tr>
+      <td style="font-weight:500">${name}</td>
+      <td>${time}</td>
+      <td style="color:var(--text2)">${cutoff==='23:59'?'—':cutoff}</td>
+      <td><span class="badge ${statusBadge}">${statusNote}</span></td>
+    </tr>`;
+  }
+  html+='</tbody></table>';
+  el.innerHTML=html;
+}
 
 async function reloadOosWeek(){
   const weekStart=document.getElementById('week-start').value||getDefaultWeekStart();
@@ -704,6 +767,7 @@ async function reloadOosWeek(){
     if(!oosData[key]) oosData[key]=[];
     oosData[key].push({name:row.item_name, time:row.sold_out_time, id:row.id});
   }
+  renderAutoOosList();
   renderOosList();
 }
 
@@ -809,7 +873,67 @@ function calcOosAddition(hourlyData,soldOutTime,openTime,closeTime){
   return Math.ceil(Object.values(hourlyData).reduce((a,b)=>a+b,0)*(after/total));
 }
 
-// ── GENERATE ─────────────────────────────────────────────
+// ── OOS AUTO-DETECT via Square Inventory API ──────────────
+// Returns { itemDisplayName: 'HH:MM' } for all items 86'd on this date at this location.
+// Uses the earliest OUT_OF_STOCK transition found for each item variation.
+async function fetchOosEvents(locId, dateObj) {
+  const startISO = new Date(dateObj).toISOString();
+  const endDate = new Date(dateObj); endDate.setDate(endDate.getDate()+1);
+  const endISO = endDate.toISOString();
+
+  // Build reverse map: variationId -> displayName
+  const varToName = {};
+  for(const [name, varId] of Object.entries(cfg.catalog_variations)){
+    varToName[varId] = name;
+  }
+  const varIds = Object.keys(varToName);
+  if(!varIds.length) return {};
+
+  const result = {};
+
+  // Square's RetrieveInventoryChanges paginates; batch by variation ID
+  // Process in chunks of 100 to stay within query limits
+  const CHUNK = 100;
+  for(let i=0; i<varIds.length; i+=CHUNK){
+    const chunk = varIds.slice(i, i+CHUNK);
+    let cursor = null;
+    do {
+      const params = new URLSearchParams({
+        location_ids: locId,
+        updated_after: startISO,
+        updated_before: endISO,
+      });
+      // catalog_object_ids is repeated per item
+      for(const id of chunk) params.append('catalog_object_ids', id);
+      if(cursor) params.set('cursor', cursor);
+
+      let r, d;
+      try {
+        r = await fetch(sqUrl('/v2/inventory/changes?'+params.toString()), {headers: sqH()});
+        d = await r.json();
+      } catch(e) { break; }
+      if(d.errors) break;
+
+      for(const change of d.changes||[]){
+        // We want manual 86 events: to_state = OUT_OF_STOCK
+        if(change.type !== 'ADJUSTMENT') continue;
+        if(change.adjustment?.to_state !== 'OUT_OF_STOCK') continue;
+        const varId = change.adjustment?.catalog_object_id;
+        const name = varToName[varId];
+        if(!name) continue;
+        // Parse timestamp to HH:MM local time
+        const ts = change.adjustment?.occurred_at||change.adjustment?.created_at;
+        if(!ts) continue;
+        const t = new Date(ts);
+        const hhmm = t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+        // Keep the earliest OOS time for the day
+        if(!result[name] || hhmm < result[name]) result[name] = hhmm;
+      }
+      cursor = d.cursor||null;
+    } while(cursor);
+  }
+  return result;
+}
 // Stores fetched baseline data: { itemName: { day: { Red, Bel, Wood } } }
 let baselineData = {};
 let weeksUsedInfo = '';
@@ -874,13 +998,18 @@ async function fetchData() {
   const totalFetches = 7 * WEEKS_TO_TRY * Object.values(locMap).filter(Boolean).length;
   setStatus('gen-status',`<span class="spin"></span> Fetching data… [0/${totalFetches}]`,'info');
 
+  // oosByDow[dow][weekIdx][locKey] = { itemDisplayName: 'HH:MM' }
+  const oosByDow = {};
+
   for(let dow=0; dow<7; dow++){
     salesByDow[dow] = [];
+    oosByDow[dow] = [];
     const weekDates = getLastNWeekdays(dow, WEEKS_TO_TRY);
     for(const date of weekDates){
       const weekData = {};
+      const weekOos = {};
       for(const[loc, locId] of Object.entries(locMap)){
-        if(!locId){ weekData[loc]={counts:{},hourly:{}}; continue; }
+        if(!locId){ weekData[loc]={counts:{},hourly:{}}; weekOos[loc]={}; continue; }
         fetched++;
         setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} ${dowNames[dow]}s… [${fetched}/${totalFetches}]`,'info');
         const startISO = new Date(date).toISOString();
@@ -890,8 +1019,13 @@ async function fetchData() {
           const orders = await fetchOrders(locId, startISO, endISO);
           weekData[loc] = aggregateOrders(orders);
         } catch(e){ weekData[loc]={counts:{},hourly:{}}; }
+        // Fetch auto OOS events for this date/location
+        try{
+          weekOos[loc] = await fetchOosEvents(locId, date);
+        } catch(e){ weekOos[loc]={}; }
       }
       salesByDow[dow].push(weekData);
+      oosByDow[dow].push(weekOos);
     }
   }
 
@@ -900,34 +1034,55 @@ async function fetchData() {
   // For each production item + day-of-week + location, compute qty for each week,
   // then smart-average the best pair
   baselineData = {};
+  autoOosData = {}; // reset and rebuild from this fetch
   const weeksUsedPerItem = {};
 
   for(const pi of cfg.prod_items){
     baselineData[pi.name] = {};
+    const cutoff = pi.oos_cutoff || '23:59'; // default: never suppress
     for(let dow=0; dow<7; dow++){
       const dayName = DAYS[dow]; // DAYS = Tue..Mon
       // Map DAYS index to day-of-week index
       const dowIndex = [2,3,4,5,6,0,1][dow]; // Tue=2,Wed=3,Thu=4,Fri=5,Sat=6,Sun=0,Mon=1
       const weekSamples = salesByDow[dowIndex];
+      const oosSamples = oosByDow[dowIndex];
       baselineData[pi.name][dayName] = {};
 
       for(const loc of LOCS){
-        const weeklyQtys = weekSamples.map(weekData => {
+        const weeklyQtys = weekSamples.map((weekData, wIdx) => {
           const sales = weekData[loc]?.counts||{};
           const hourly = weekData[loc]?.hourly||{};
           const myRels = cfg.rels.filter(r=>r.prod===pi.name);
+
+          // Determine effective OOS time for this item/day/loc/week:
+          // 1. Manual entry in oosData wins if present (applied to all weeks equally)
+          // 2. Otherwise use auto-detected OOS from this specific week's inventory data
+          // 3. Only apply if OOS time is before the item's cutoff
+          const manualEntry = (oosData[dayName+'|'+loc]||[]).find(o=>o.name===pi.name);
+          const autoTime = oosSamples[wIdx]?.[loc]?.[pi.name];
+
+          // Also accumulate autoOosData for the OOS tab display (use most recent week = wIdx 0)
+          if(wIdx===0 && autoTime){
+            const k = dayName+'|'+loc;
+            if(!autoOosData[k]) autoOosData[k]={};
+            autoOosData[k][pi.name] = autoTime;
+          }
+
+          let effectiveOosTime = null;
+          if(manualEntry){
+            effectiveOosTime = manualEntry.time;
+          } else if(autoTime && autoTime < cutoff){
+            effectiveOosTime = autoTime;
+          }
+
           let qty = 0;
           for(const rel of myRels){
             qty += lookupSales(sales, rel.menu) * rel.qty;
-            const oosKey = dayName+'|'+loc;
-            const oosEntry = (oosData[oosKey]||[]).find(o=>o.name===pi.name);
-            if(oosEntry) qty += calcOosAddition(lookupHourly(hourly,rel.menu), oosEntry.time, openTime, closeTime)*rel.qty;
+            if(effectiveOosTime) qty += calcOosAddition(lookupHourly(hourly,rel.menu), effectiveOosTime, openTime, closeTime)*rel.qty;
           }
           if(myRels.length===0){
             qty = lookupSales(sales, pi.name);
-            const oosKey = dayName+'|'+loc;
-            const oosEntry = (oosData[oosKey]||[]).find(o=>o.name===pi.name);
-            if(oosEntry) qty += calcOosAddition(lookupHourly(hourly,pi.name), oosEntry.time, openTime, closeTime);
+            if(effectiveOosTime) qty += calcOosAddition(lookupHourly(hourly,pi.name), effectiveOosTime, openTime, closeTime);
           }
           return qty;
         });
@@ -948,7 +1103,10 @@ async function fetchData() {
   document.getElementById('weeks-used-label').textContent = weeksUsedInfo;
   document.getElementById('gen-review-wrap').style.display = 'block';
   document.getElementById('fetch-btn').disabled = false;
-  setStatus('gen-status','','info');
+  const oosEventCount = Object.values(autoOosData).reduce((n,d)=>n+Object.keys(d).length,0);
+  const oosNote = oosEventCount ? ` · ${oosEventCount} OOS event${oosEventCount!==1?'s':''} auto-detected` : ' · No OOS events found (catalog sync required for auto-detection)';
+  setStatus('gen-status','Data fetched.'+oosNote,'ok');
+  renderAutoOosList();
   renderBaselineTable();
   document.getElementById('proj-direction').value = '';
   document.getElementById('proj-summary').textContent = '';
