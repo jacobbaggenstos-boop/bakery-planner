@@ -246,6 +246,7 @@ input[type=range]{accent-color:var(--text)}
         <div class="btn-row">
           <button class="btn btnp" id="fetch-btn" onclick="fetchData()">Pull last 2 weeks of data</button>
           <button class="btn" onclick="generate(true)">Debug item names</button>
+          <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
         </div>
       </div>
 
@@ -253,6 +254,10 @@ input[type=range]{accent-color:var(--text)}
       <div id="debug-wrap" style="display:none">
         <div class="sec-label">Debug — exact Square item names (last Tuesday, Redmond)</div>
         <div class="output" id="debug-area" style="max-height:260px"></div>
+      </div>
+      <div id="debug-oos-wrap" style="display:none">
+        <div class="sec-label">Debug — raw OOS inventory changes (last Tuesday, Redmond)</div>
+        <div class="output" id="debug-oos-area" style="max-height:400px"></div>
       </div>
 
       <!-- Step 2: Review + adjust (shown after fetch) -->
@@ -1277,6 +1282,84 @@ async function generate(debugMode=false){
       setStatus('gen-status','Debug complete.','ok');
     }catch(e){setStatus('gen-status','Error: '+e.message,'err');}
     return;
+  }
+}
+
+async function debugOos(){
+  const tok=token();
+  if(!tok){setStatus('gen-status','Add your Square token.','err');return;}
+  const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
+  if(!locRed){setStatus('gen-status','Add Redmond location ID.','err');return;}
+
+  const varIds=Object.values(cfg.catalog_variations);
+  const areaEl=document.getElementById('debug-oos-area');
+  const wrapEl=document.getElementById('debug-oos-wrap');
+
+  if(!varIds.length){
+    areaEl.textContent='No variation IDs found. Run "Sync from Square" in the Catalog tab first, then re-fetch.';
+    wrapEl.style.display='block';
+    return;
+  }
+
+  setStatus('gen-status','<span class="spin"></span> Fetching raw OOS data…','info');
+  const tues=getLastNWeekdays(2,1)[0];
+  const end=new Date(tues); end.setDate(end.getDate()+1);
+  const startISO=tues.toISOString(), endISO=end.toISOString();
+
+  // Fetch first chunk only (up to 10 IDs) so response is readable
+  const chunk=varIds.slice(0,10);
+  const params=new URLSearchParams({location_ids:locRed, updated_after:startISO, updated_before:endISO});
+  for(const id of chunk) params.append('catalog_object_ids',id);
+
+  try{
+    const r=await fetch(sqUrl('/v2/inventory/changes?'+params.toString()),{headers:sqH()});
+    const d=await r.json();
+
+    const lines=[];
+    lines.push('=== RAW RESPONSE (first 10 variation IDs) ===');
+    lines.push('HTTP status: '+r.status);
+    lines.push('');
+
+    if(d.errors){
+      lines.push('ERRORS:');
+      for(const e of d.errors) lines.push('  '+e.category+' / '+e.code+': '+e.detail);
+    } else {
+      const changes=d.changes||[];
+      lines.push(`Total changes returned: ${changes.length}`);
+      if(changes.length===0){
+        lines.push('');
+        lines.push('No changes found for this date/location. Possible reasons:');
+        lines.push('  • Items were not 86\'d on this day');
+        lines.push('  • updated_after/updated_before filters may not match Square\'s field');
+        lines.push('  • The inventory change endpoint may use a different filter name');
+        lines.push('');
+        lines.push('Full raw response:');
+        lines.push(JSON.stringify(d, null, 2));
+      } else {
+        lines.push('');
+        lines.push('Change types present: '+[...new Set(changes.map(c=>c.type))].join(', '));
+        lines.push('');
+        lines.push('ALL CHANGES:');
+        for(const c of changes){
+          lines.push('─'.repeat(50));
+          lines.push('  type: '+c.type);
+          // Dump all top-level keys of the change
+          for(const [k,v] of Object.entries(c)){
+            if(k==='type') continue;
+            lines.push('  '+k+': '+JSON.stringify(v));
+          }
+        }
+        lines.push('');
+        lines.push('FULL JSON (first change):');
+        lines.push(JSON.stringify(changes[0], null, 2));
+      }
+    }
+
+    areaEl.textContent=lines.join('\n');
+    wrapEl.style.display='block';
+    setStatus('gen-status','OOS debug complete — check output below.','ok');
+  } catch(e){
+    setStatus('gen-status','Error: '+e.message,'err');
   }
 }
 
