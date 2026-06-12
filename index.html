@@ -743,22 +743,29 @@ function renderAutoOosList(){
     return;
   }
   const closeTime=cfg.close_time||'17:00';
-  let html='<table class="tbl"><thead><tr><th>Item</th><th>86\'d at</th><th>OOS cutoff</th><th>Status</th></tr></thead><tbody>';
-  for(const [name, time] of entries.sort((a,b)=>a[0].localeCompare(b[0]))){
+  let html='<table class="tbl"><thead><tr><th>Item</th><th>OOS intervals</th><th>Cutoff</th><th>Status</th></tr></thead><tbody>';
+  for(const [name, intervals] of entries.sort((a,b)=>a[0].localeCompare(b[0]))){
     const pi=cfg.prod_items.find(p=>p.name===name);
     const cutoff=pi?.oos_cutoff||'23:59';
     const manualOverride=(oosData[key]||[]).find(o=>o.name===name);
+
+    const intervalsText = intervals.map(iv =>
+      iv.from + (iv.until ? ` – ${iv.until}` : ' – close')
+    ).join(', ');
+
+    const activeIntervals = intervals.filter(iv => iv.from < cutoff);
     let statusBadge, statusNote;
     if(manualOverride){
       statusBadge='bpurp'; statusNote=`manual override (${manualOverride.time})`;
-    } else if(time>=cutoff){
-      statusBadge='bok'; statusNote='after cutoff — no adjustment';
+    } else if(!activeIntervals.length){
+      statusBadge='bok'; statusNote='all after cutoff — no adjustment';
     } else {
-      statusBadge='bwarn'; statusNote='missed sales added';
+      const count = activeIntervals.length;
+      statusBadge='bwarn'; statusNote=`${count} interval${count>1?'s':''} adjusted`;
     }
     html+=`<tr>
       <td style="font-weight:500">${name}</td>
-      <td>${time}</td>
+      <td style="font-size:12px;color:var(--text2)">${intervalsText}</td>
       <td style="color:var(--text2)">${cutoff==='23:59'?'—':cutoff}</td>
       <td><span class="badge ${statusBadge}">${statusNote}</span></td>
     </tr>`;
@@ -869,82 +876,97 @@ function lookupHourly(hourly,menuName){
   return Object.keys(m).length?m:null;
 }
 
-function calcOosAddition(hourlyData,soldOutTime,openTime,closeTime){
-  if(!hourlyData)return 0;
-  const soldOutH=timeToH(soldOutTime),closeH=timeToH(closeTime),openH=timeToH(openTime);
-  if(soldOutH>=closeH)return 0;
-  let total=0,after=0;
-  for(const[h,q]of Object.entries(hourlyData)){
+// Calculate missed sales for a list of OOS intervals, each clipped to before the
+// item's cutoff time. Intervals where until=null (still OOS at close) are treated
+// as OOS through close time.
+//
+// intervals: [{from:'HH:MM', until:'HH:MM'|null}, ...]
+// cutoff:    'HH:MM' — intervals starting at or after this are ignored
+// openTime/closeTime: 'HH:MM'
+//
+// Method: for each interval, calculate what fraction of the day's actual sales
+// fell within that window, then scale total daily sales by that fraction.
+function calcOosAddition(hourlyData, intervals, cutoff, openTime, closeTime){
+  if(!hourlyData || !intervals?.length) return 0;
+  const openH=timeToH(openTime), closeH=timeToH(closeTime), cutoffH=timeToH(cutoff||'23:59');
+  const totalSales=Object.values(hourlyData).reduce((a,b)=>a+b,0);
+  if(totalSales===0) return 0;
+
+  // Total observed sales during open hours (denominator for the hourly curve)
+  let openSales=0;
+  for(const[h,q] of Object.entries(hourlyData)){
     const hr=parseInt(h);
-    if(hr>=openH&&hr<closeH){ total+=q; if(hr>=soldOutH)after+=q; }
+    if(hr>=openH && hr<closeH) openSales+=q;
   }
-  if(total===0)return 0;
-  return Math.ceil(Object.values(hourlyData).reduce((a,b)=>a+b,0)*(after/total));
+  if(openSales===0) return 0;
+
+  let missedFraction=0;
+
+  for(const interval of intervals){
+    const fromH=timeToH(interval.from);
+    // Skip intervals that start at or after the cutoff — acceptable sellout
+    if(fromH>=cutoffH) continue;
+    // Clip interval end to: min(until, cutoff, close)
+    const untilH=interval.until ? Math.min(timeToH(interval.until), cutoffH, closeH) : Math.min(cutoffH, closeH);
+    if(untilH<=fromH) continue;
+
+    // Sum the hourly sales that fell within [fromH, untilH)
+    // These are the sales that happened during the OOS window — i.e. what we
+    // *didn't* capture because the item was unavailable.
+    // We use the same item's curve from the same day as a proxy for demand shape.
+    let windowSales=0;
+    for(const[h,q] of Object.entries(hourlyData)){
+      const hr=parseInt(h);
+      if(hr>=fromH && hr<untilH) windowSales+=q;
+    }
+    missedFraction+=windowSales/openSales;
+  }
+
+  // missedFraction is the proportion of the day's demand that was blocked.
+  // Scale by total daily sales to get estimated missed units.
+  return Math.ceil(totalSales*missedFraction);
 }
 
-// ── OOS AUTO-DETECT via Square Inventory API ──────────────
-// Fetches ALL inventory changes for all known variations at a given location in one
-// pass (Square doesn't support date filtering on this endpoint). Returns a cache:
-//   { variationId: [ { date: 'YYYY-MM-DD', hhmm: 'HH:MM' } ] }
-// Only keeps IN_STOCK→SOLD transitions (how Square records an 86 from POS).
-async function fetchAllOosChanges(locId) {
-  const varIds = Object.keys(cfg.catalog_variations).map(name => cfg.catalog_variations[name]);
-  if(!varIds.length) return {};
+// ── OOS AUTO-DETECT via Supabase webhook events ───────────
+// Dates before the webhook was set up will simply have no rows → no adjustment.
 
-  const cache = {}; // variationId -> [{date, hhmm}]
+// Load all OOS intervals for the weeks we're fetching, once, before the orders loop.
+// Returns { locKey: { 'YYYY-MM-DD': { itemName: [{from:'HH:MM', until:'HH:MM'|null}] } } }
+async function loadOosEventCache(weekDates) {
+  const allDates = [...new Set(weekDates.map(d => new Date(d).toISOString().split('T')[0]))];
+  const minDate = allDates.slice().sort()[0];
+  const maxDate = allDates.slice().sort().reverse()[0];
 
-  const CHUNK = 100;
-  for(let i=0; i<varIds.length; i+=CHUNK){
-    const chunk = varIds.slice(i, i+CHUNK);
-    let cursor = null;
-    do {
-      const body = { catalog_object_ids: chunk, location_ids: [locId] };
-      if(cursor) body.cursor = cursor;
-      let r, d;
-      try {
-        r = await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'), {method:'POST', headers:sqH(), body:JSON.stringify(body)});
-        d = await r.json();
-      } catch(e) { break; }
-      if(d.errors) break;
-      for(const change of d.changes||[]){
-        if(change.type !== 'ADJUSTMENT') continue;
-        const adj = change.adjustment;
-        if(adj?.to_state !== 'SOLD') continue;
-        const varId = adj.catalog_object_id;
-        if(!varId) continue;
-        const ts = adj.occurred_at || adj.created_at;
-        if(!ts) continue;
-        const t = new Date(ts);
-        const date = t.toISOString().split('T')[0];
-        const hhmm = t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
-        if(!cache[varId]) cache[varId] = [];
-        cache[varId].push({date, hhmm});
-      }
-      cursor = d.cursor||null;
-    } while(cursor);
+  const { data, error } = await sb
+    .from('bakery_oos_events')
+    .select('item_name, loc_key, unavailable_from, unavailable_until, event_date')
+    .gte('event_date', minDate)
+    .lte('event_date', maxDate);
+
+  if(error || !data) return {};
+
+  // Build: cache[locKey][dateStr][itemName] = [{from:'HH:MM', until:'HH:MM'|null}]
+  const cache = {};
+  for(const row of data){
+    const loc = row.loc_key;
+    const date = typeof row.event_date === 'string' ? row.event_date.split('T')[0] : row.event_date;
+    const fromTime = new Date(row.unavailable_from);
+    const fromHHMM = fromTime.getHours().toString().padStart(2,'0')+':'+fromTime.getMinutes().toString().padStart(2,'0');
+    const untilHHMM = row.unavailable_until
+      ? (t => t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0'))(new Date(row.unavailable_until))
+      : null;
+    if(!cache[loc]) cache[loc]={};
+    if(!cache[loc][date]) cache[loc][date]={};
+    if(!cache[loc][date][row.item_name]) cache[loc][date][row.item_name]=[];
+    cache[loc][date][row.item_name].push({from: fromHHMM, until: untilHHMM});
   }
   return cache;
 }
 
-// Given the pre-fetched cache for a location, return { itemDisplayName: 'HH:MM' }
-// for items that had their earliest SOLD event on the given date.
-function oosEventsForDate(oosCache, dateObj) {
+// Returns { itemName: [{from:'HH:MM', until:'HH:MM'|null}] } for a given date/loc.
+function oosEventsForDate(oosCache, dateObj, locKey) {
   const dateStr = new Date(dateObj).toISOString().split('T')[0];
-  // Build reverse map: variationId -> displayName
-  const varToName = {};
-  for(const [name, varId] of Object.entries(cfg.catalog_variations)) varToName[varId] = name;
-
-  const result = {};
-  for(const [varId, events] of Object.entries(oosCache)){
-    const name = varToName[varId];
-    if(!name) continue;
-    const dayEvents = events.filter(e => e.date === dateStr);
-    if(!dayEvents.length) continue;
-    // Earliest SOLD time on this day
-    const earliest = dayEvents.map(e=>e.hhmm).sort()[0];
-    result[name] = earliest;
-  }
-  return result;
+  return oosCache?.[locKey]?.[dateStr] || {};
 }
 // Stores fetched baseline data: { itemName: { day: { Red, Bel, Wood } } }
 let baselineData = {};
@@ -1013,18 +1035,14 @@ async function fetchData() {
   // oosByDow[dow][weekIdx][locKey] = { itemDisplayName: 'HH:MM' }
   const oosByDow = {};
 
-  // Fetch OOS change history once per location (Square has no date filter,
-  // so we pull everything once and slice by date in JS — far fewer API calls)
-  const hasVariations = Object.keys(cfg.catalog_variations).length > 0;
-  const oosCacheByLoc = {};
-  if(hasVariations){
-    setStatus('gen-status','<span class="spin"></span> Fetching 86 history…','info');
-    for(const [loc, locId] of Object.entries(locMap)){
-      if(!locId){ oosCacheByLoc[loc]={}; continue; }
-      try{ oosCacheByLoc[loc] = await fetchAllOosChanges(locId); }
-      catch(e){ oosCacheByLoc[loc]={}; }
-    }
+  // Load OOS events from Supabase (webhook-captured) once for all dates/locations.
+  // Dates before webhook setup will simply have no rows — raw sales used, no adjustment.
+  setStatus('gen-status','<span class="spin"></span> Loading OOS event history…','info');
+  const allWeekDates = [];
+  for(let dow=0; dow<7; dow++){
+    for(const d of getLastNWeekdays(dow, WEEKS_TO_TRY)) allWeekDates.push(d);
   }
+  const oosCache = await loadOosEventCache(allWeekDates);
 
   for(let dow=0; dow<7; dow++){
     salesByDow[dow] = [];
@@ -1044,8 +1062,7 @@ async function fetchData() {
           const orders = await fetchOrders(locId, startISO, endISO);
           weekData[loc] = aggregateOrders(orders);
         } catch(e){ weekData[loc]={counts:{},hourly:{}}; }
-        // Slice OOS events for this date from the pre-fetched cache
-        weekOos[loc] = hasVariations ? oosEventsForDate(oosCacheByLoc[loc]||{}, date) : {};
+        weekOos[loc] = oosEventsForDate(oosCache, date, loc);
       }
       salesByDow[dow].push(weekData);
       oosByDow[dow].push(weekOos);
@@ -1077,35 +1094,36 @@ async function fetchData() {
           const hourly = weekData[loc]?.hourly||{};
           const myRels = cfg.rels.filter(r=>r.prod===pi.name);
 
-          // Determine effective OOS time for this item/day/loc/week:
-          // 1. Manual entry in oosData wins if present (applied to all weeks equally)
-          // 2. Otherwise use auto-detected OOS from this specific week's inventory data
-          // 3. Only apply if OOS time is before the item's cutoff
+          // Determine effective OOS intervals for this item/day/loc/week.
+          // Manual entry (single time) takes priority, converted to a single open-ended interval.
+          // Otherwise use the auto-detected intervals from this specific week.
+          // calcOosAddition handles cutoff internally — no need to filter here.
           const manualEntry = (oosData[dayName+'|'+loc]||[]).find(o=>o.name===pi.name);
-          const autoTime = oosSamples[wIdx]?.[loc]?.[pi.name];
+          const autoIntervals = oosSamples[wIdx]?.[loc]?.[pi.name]; // [{from,until}] or undefined
 
-          // Also accumulate autoOosData for the OOS tab display (use most recent week = wIdx 0)
-          if(wIdx===0 && autoTime){
+          // Accumulate autoOosData for OOS tab display (most recent week only)
+          if(wIdx===0 && autoIntervals?.length){
             const k = dayName+'|'+loc;
             if(!autoOosData[k]) autoOosData[k]={};
-            autoOosData[k][pi.name] = autoTime;
+            autoOosData[k][pi.name] = autoIntervals;
           }
 
-          let effectiveOosTime = null;
+          let effectiveIntervals = null;
           if(manualEntry){
-            effectiveOosTime = manualEntry.time;
-          } else if(autoTime && autoTime < cutoff){
-            effectiveOosTime = autoTime;
+            // Convert manual single time to an open-ended interval (sold out at X, didn't restock)
+            effectiveIntervals = [{from: manualEntry.time, until: null}];
+          } else if(autoIntervals?.length){
+            effectiveIntervals = autoIntervals;
           }
 
           let qty = 0;
           for(const rel of myRels){
             qty += lookupSales(sales, rel.menu) * rel.qty;
-            if(effectiveOosTime) qty += calcOosAddition(lookupHourly(hourly,rel.menu), effectiveOosTime, openTime, closeTime)*rel.qty;
+            if(effectiveIntervals) qty += calcOosAddition(lookupHourly(hourly,rel.menu), effectiveIntervals, cutoff, openTime, closeTime)*rel.qty;
           }
           if(myRels.length===0){
             qty = lookupSales(sales, pi.name);
-            if(effectiveOosTime) qty += calcOosAddition(lookupHourly(hourly,pi.name), effectiveOosTime, openTime, closeTime);
+            if(effectiveIntervals) qty += calcOosAddition(lookupHourly(hourly,pi.name), effectiveIntervals, cutoff, openTime, closeTime);
           }
           return qty;
         });
