@@ -248,6 +248,10 @@ input[type=range]{accent-color:var(--text)}
           <button class="btn" onclick="generate(true)">Debug item names</button>
           <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
         </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px"/>
+          <button class="btn" onclick="debugItemOos()">Debug this item's history</button>
+        </div>
       </div>
 
       <div id="gen-status"></div>
@@ -1362,6 +1366,84 @@ async function debugOos(){
 
   areaEl.textContent=lines.join('\n');
   wrapEl.style.display='block';
+}
+
+async function debugItemOos(){
+  const itemName = document.getElementById('debug-item-name').value.trim();
+  if(!itemName){ alert('Enter an item name first.'); return; }
+  if(!token()){ setStatus('gen-status','Add your Square token.','err'); return; }
+
+  const varId = cfg.catalog_variations[itemName];
+  const areaEl = document.getElementById('debug-oos-area');
+  const wrapEl = document.getElementById('debug-oos-wrap');
+
+  if(!varId){
+    // Try case-insensitive match
+    const match = Object.keys(cfg.catalog_variations).find(k=>k.toLowerCase().includes(itemName.toLowerCase()));
+    if(!match){
+      areaEl.textContent = `"${itemName}" not found in catalog variations.\n\nRun "Sync from Square" in the Catalog tab first, then try again.\n\nKnown items containing that text: (none)\n\nAll known items:\n`+Object.keys(cfg.catalog_variations).sort().join('\n');
+      wrapEl.style.display='block'; return;
+    }
+    document.getElementById('debug-item-name').value = match;
+    return debugItemOos();
+  }
+
+  setStatus('gen-status',`<span class="spin"></span> Fetching all history for "${itemName}"…`,'info');
+
+  const locMap = {
+    Redmond: document.getElementById('loc-red').value.trim()||cfg.loc_red,
+    Bellevue: document.getElementById('loc-bel').value.trim()||cfg.loc_bel,
+    Woodinville: document.getElementById('loc-wood').value.trim()||cfg.loc_wood,
+  };
+
+  const lines = [];
+  lines.push(`Item: ${itemName}`);
+  lines.push(`Variation ID: ${varId}`);
+  lines.push('');
+
+  for(const [locName, locId] of Object.entries(locMap)){
+    if(!locId){ lines.push(`${locName}: no location ID configured`); lines.push(''); continue; }
+    lines.push(`=== ${locName} (${locId}) ===`);
+    try{
+      const r = await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'),{method:'POST',headers:sqH(),body:JSON.stringify({catalog_object_ids:[varId],location_ids:[locId]})});
+      const d = await r.json();
+      if(d.errors){ for(const e of d.errors) lines.push('  ERROR: '+e.detail); }
+      else {
+        const changes = d.changes||[];
+        lines.push(`Total changes ever: ${changes.length}`);
+        if(!changes.length){
+          lines.push('  (no inventory changes recorded for this item at this location)');
+        } else {
+          lines.push('');
+          lines.push('  timestamp (local)            from → to         source');
+          lines.push('  '+'-'.repeat(70));
+          for(const c of changes.sort((a,b)=>{
+            const ta=a.adjustment?.occurred_at||''; const tb=b.adjustment?.occurred_at||'';
+            return ta.localeCompare(tb);
+          })){
+            const adj = c.adjustment||c.physical_count||{};
+            const ts = adj.occurred_at||adj.created_at||'?';
+            const localTime = ts==='?' ? '?' : new Date(ts).toLocaleString();
+            const from = adj.from_state||'?';
+            const to = adj.to_state||adj.state||'?';
+            const source = adj.source?.name||adj.team_member_id||'?';
+            const qty = adj.quantity ? ` (qty ${adj.quantity})` : '';
+            lines.push(`  ${localTime.padEnd(28)} ${(from+' → '+to).padEnd(24)} ${source}${qty}`);
+          }
+        }
+      }
+    } catch(e){ lines.push('  Fetch error: '+e.message); }
+    lines.push('');
+  }
+
+  lines.push('--- What to look for ---');
+  lines.push('An 86 (manual mark out of stock) should appear as a state change around the time');
+  lines.push('you know the item sold out. Compare timestamps against what you saw in Square.');
+  lines.push('The from/to states will tell us exactly what to filter for in the main OOS logic.');
+
+  areaEl.textContent = lines.join('\n');
+  wrapEl.style.display = 'block';
+  setStatus('gen-status','Item history loaded — check debug output below.','ok');
 }
 
 function copyOut(){
