@@ -879,22 +879,15 @@ function calcOosAddition(hourlyData,soldOutTime,openTime,closeTime){
 }
 
 // ── OOS AUTO-DETECT via Square Inventory API ──────────────
-// Returns { itemDisplayName: 'HH:MM' } for all items 86'd on this date at this location.
-// Pulls all inventory changes for known variations (no server-side date filter — Square
-// doesn't support it on this endpoint) and filters by occurred_at in JS.
-async function fetchOosEvents(locId, dateObj) {
-  const dayStart = new Date(dateObj); dayStart.setHours(0,0,0,0);
-  const dayEnd   = new Date(dateObj); dayEnd.setHours(23,59,59,999);
-
-  // Build reverse map: variationId -> displayName
-  const varToName = {};
-  for(const [name, varId] of Object.entries(cfg.catalog_variations)){
-    varToName[varId] = name;
-  }
-  const varIds = Object.keys(varToName);
+// Fetches ALL inventory changes for all known variations at a given location in one
+// pass (Square doesn't support date filtering on this endpoint). Returns a cache:
+//   { variationId: [ { date: 'YYYY-MM-DD', hhmm: 'HH:MM' } ] }
+// Only keeps IN_STOCK→SOLD transitions (how Square records an 86 from POS).
+async function fetchAllOosChanges(locId) {
+  const varIds = Object.keys(cfg.catalog_variations).map(name => cfg.catalog_variations[name]);
   if(!varIds.length) return {};
 
-  const result = {};
+  const cache = {}; // variationId -> [{date, hhmm}]
 
   const CHUNK = 100;
   for(let i=0; i<varIds.length; i+=CHUNK){
@@ -903,33 +896,49 @@ async function fetchOosEvents(locId, dateObj) {
     do {
       const body = { catalog_object_ids: chunk, location_ids: [locId] };
       if(cursor) body.cursor = cursor;
-
       let r, d;
       try {
-        r = await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'), {method:'POST', headers: sqH(), body: JSON.stringify(body)});
+        r = await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'), {method:'POST', headers:sqH(), body:JSON.stringify(body)});
         d = await r.json();
       } catch(e) { break; }
       if(d.errors) break;
-
       for(const change of d.changes||[]){
-        // 86'ing at POS records IN_STOCK → SOLD (not OUT_OF_STOCK)
         if(change.type !== 'ADJUSTMENT') continue;
         const adj = change.adjustment;
         if(adj?.to_state !== 'SOLD') continue;
-        const varId = adj?.catalog_object_id;
-        const name = varToName[varId];
-        if(!name) continue;
-        // Filter to the target day by occurred_at
+        const varId = adj.catalog_object_id;
+        if(!varId) continue;
         const ts = adj.occurred_at || adj.created_at;
         if(!ts) continue;
         const t = new Date(ts);
-        if(t < dayStart || t > dayEnd) continue;
+        const date = t.toISOString().split('T')[0];
         const hhmm = t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
-        // Keep the earliest SOLD time for the day
-        if(!result[name] || hhmm < result[name]) result[name] = hhmm;
+        if(!cache[varId]) cache[varId] = [];
+        cache[varId].push({date, hhmm});
       }
       cursor = d.cursor||null;
     } while(cursor);
+  }
+  return cache;
+}
+
+// Given the pre-fetched cache for a location, return { itemDisplayName: 'HH:MM' }
+// for items that had their earliest SOLD event on the given date.
+function oosEventsForDate(oosCache, dateObj) {
+  const dateStr = new Date(dateObj).toISOString().split('T')[0];
+  // Build reverse map: variationId -> displayName
+  const varToName = {};
+  for(const [name, varId] of Object.entries(cfg.catalog_variations)) varToName[varId] = name;
+
+  const result = {};
+  for(const [varId, events] of Object.entries(oosCache)){
+    const name = varToName[varId];
+    if(!name) continue;
+    const dayEvents = events.filter(e => e.date === dateStr);
+    if(!dayEvents.length) continue;
+    // Earliest SOLD time on this day
+    const earliest = dayEvents.map(e=>e.hhmm).sort()[0];
+    result[name] = earliest;
   }
   return result;
 }
@@ -1000,6 +1009,19 @@ async function fetchData() {
   // oosByDow[dow][weekIdx][locKey] = { itemDisplayName: 'HH:MM' }
   const oosByDow = {};
 
+  // Fetch OOS change history once per location (Square has no date filter,
+  // so we pull everything once and slice by date in JS — far fewer API calls)
+  const hasVariations = Object.keys(cfg.catalog_variations).length > 0;
+  const oosCacheByLoc = {};
+  if(hasVariations){
+    setStatus('gen-status','<span class="spin"></span> Fetching 86 history…','info');
+    for(const [loc, locId] of Object.entries(locMap)){
+      if(!locId){ oosCacheByLoc[loc]={}; continue; }
+      try{ oosCacheByLoc[loc] = await fetchAllOosChanges(locId); }
+      catch(e){ oosCacheByLoc[loc]={}; }
+    }
+  }
+
   for(let dow=0; dow<7; dow++){
     salesByDow[dow] = [];
     oosByDow[dow] = [];
@@ -1018,10 +1040,8 @@ async function fetchData() {
           const orders = await fetchOrders(locId, startISO, endISO);
           weekData[loc] = aggregateOrders(orders);
         } catch(e){ weekData[loc]={counts:{},hourly:{}}; }
-        // Fetch auto OOS events for this date/location
-        try{
-          weekOos[loc] = await fetchOosEvents(locId, date);
-        } catch(e){ weekOos[loc]={}; }
+        // Slice OOS events for this date from the pre-fetched cache
+        weekOos[loc] = hasVariations ? oosEventsForDate(oosCacheByLoc[loc]||{}, date) : {};
       }
       salesByDow[dow].push(weekData);
       oosByDow[dow].push(weekOos);
