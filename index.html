@@ -119,16 +119,16 @@ input[type=range]{accent-color:var(--text)}
     </div>
   </header>
   <div class="tabs">
-    <button class="tab active" onclick="showTab('setup',this)">1. Setup</button>
-    <button class="tab" onclick="showTab('catalog',this)">2. Catalog</button>
-    <button class="tab" onclick="showTab('recipes',this)">3. Relationships</button>
-    <button class="tab" onclick="showTab('oos',this)">4. Out of stock</button>
-    <button class="tab" onclick="showTab('generate',this)">5. Generate</button>
+    <button class="tab active" onclick="showTab('catalog',this)">Catalog</button>
+    <button class="tab" onclick="showTab('recipes',this)">Relationships</button>
+    <button class="tab" onclick="showTab('oos',this)">Out of stock</button>
+    <button class="tab" onclick="showTab('generate',this)">Generate</button>
+    <button class="tab" onclick="showTab('setup',this)">Setup</button>
   </div>
   <div class="content">
 
     <!-- SETUP -->
-    <div id="tab-setup" class="panel active">
+    <div id="tab-setup" class="panel">
       <div class="card">
         <div class="card-title">Square connection <span class="badge bwarn">stored in shared config</span></div>
         <div id="api-status"></div>
@@ -156,7 +156,7 @@ input[type=range]{accent-color:var(--text)}
     </div>
 
     <!-- CATALOG -->
-    <div id="tab-catalog" class="panel">
+    <div id="tab-catalog" class="panel active">
       <div class="card">
         <div class="card-title">Square catalog sync</div>
         <div class="hint">Sync pulls your live menu items from Square. Results are shared with your team automatically.</div>
