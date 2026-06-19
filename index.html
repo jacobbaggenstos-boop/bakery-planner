@@ -1123,8 +1123,23 @@ async function fetchData() {
           // Determine effective OOS intervals for this item/day/loc/week.
           // Manual entry (single time) takes priority, converted to a single open-ended interval.
           // Otherwise use the auto-detected intervals from this specific week.
+          //
+          // OOS events are logged under the SQUARE MENU ITEM name (e.g. "Cheddar Kale
+          // Scone"), not the production item name (e.g. "Savory Scone"). So we need to
+          // check both the production item's own name AND every menu item that maps to
+          // it via relationships, using the same fuzzy name matching used for sales.
           const manualEntry = (oosData[dayName+'|'+loc]||[]).find(o=>o.name===pi.name);
-          const autoIntervals = oosSamples[wIdx]?.[loc]?.[pi.name]; // [{from,until}] or undefined
+
+          const dayLocOosMap = oosSamples[wIdx]?.[loc] || {}; // { menuOrItemName: [{from,until}] }
+          const candidateNames = [pi.name, ...myRels.map(r=>r.menu)];
+          let autoIntervals = null;
+          for(const candidate of candidateNames){
+            for(const[evtName, intervals] of Object.entries(dayLocOosMap)){
+              if(nameMatches(evtName, candidate)){
+                autoIntervals = autoIntervals ? autoIntervals.concat(intervals) : intervals;
+              }
+            }
+          }
 
           // Accumulate autoOosData for OOS tab display (most recent week only)
           if(wIdx===0 && autoIntervals?.length){
