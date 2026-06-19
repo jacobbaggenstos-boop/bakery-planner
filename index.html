@@ -876,54 +876,68 @@ function lookupHourly(hourly,menuName){
   return Object.keys(m).length?m:null;
 }
 
-// Calculate missed sales for a list of OOS intervals, each clipped to before the
-// item's cutoff time. Intervals where until=null (still OOS at close) are treated
-// as OOS through close time.
+// Calculate missed sales for a list of OOS intervals on ONE day, using the
+// hourly demand SHAPE from other sample days of the same weekday (where the
+// item was not OOS during the missed window) as the reference curve.
 //
-// intervals: [{from:'HH:MM', until:'HH:MM'|null}, ...]
-// cutoff:    'HH:MM' — intervals starting at or after this are ignored
-// openTime/closeTime: 'HH:MM'
+// Why: once an item is actually 86'd, its own hourly data for the rest of
+// that window is artificially zero (or near it) — it can't be used to
+// estimate what would have sold. So instead we look at how this item's
+// sales were distributed across hours on the OTHER sample days, and apply
+// that shape to estimate the missed amount, scaled to this day's volume.
 //
-// Method: for each interval, calculate what fraction of the day's actual sales
-// fell within that window, then scale total daily sales by that fraction.
-function calcOosAddition(hourlyData, intervals, cutoff, openTime, closeTime){
+// hourlyData:      this day's hourly sales for the item (used for total daily volume)
+// otherDaysHourly: array of hourly maps from other week samples (same weekday),
+//                  EXCLUDING days where this item/loc was also OOS during the window
+// intervals:       [{from:'HH:MM', until:'HH:MM'|null}] for THIS day
+// cutoff/openTime/closeTime: 'HH:MM'
+//
+// Returns the estimated missed units for this day.
+function calcOosAddition(hourlyData, otherDaysHourly, intervals, cutoff, openTime, closeTime){
   if(!hourlyData || !intervals?.length) return 0;
   const openH=timeToH(openTime), closeH=timeToH(closeTime), cutoffH=timeToH(cutoff||'23:59');
   const totalSales=Object.values(hourlyData).reduce((a,b)=>a+b,0);
-  if(totalSales===0) return 0;
 
-  // Total observed sales during open hours (denominator for the hourly curve)
-  let openSales=0;
-  for(const[h,q] of Object.entries(hourlyData)){
-    const hr=parseInt(h);
-    if(hr>=openH && hr<closeH) openSales+=q;
+  // Build a reference hourly curve from other clean days (sum across days per hour)
+  const cleanDays = (otherDaysHourly||[]).filter(h=>h && Object.keys(h).length);
+  const refCurve={}; // hour -> total qty across clean days
+  let refTotal=0;
+  for(const dayHourly of cleanDays){
+    for(const[h,q] of Object.entries(dayHourly)){
+      const hr=parseInt(h);
+      if(hr>=openH && hr<closeH){ refCurve[hr]=(refCurve[hr]||0)+q; refTotal+=q; }
+    }
   }
-  if(openSales===0) return 0;
+
+  // Fallback: if no clean reference days exist, use this day's own curve
+  // (better than nothing, though it will under-count as noted above)
+  const useOwnCurve = cleanDays.length===0;
+  if(useOwnCurve){
+    for(const[h,q] of Object.entries(hourlyData)){
+      const hr=parseInt(h);
+      if(hr>=openH && hr<closeH){ refCurve[hr]=(refCurve[hr]||0)+q; refTotal+=q; }
+    }
+  }
+  if(refTotal===0) return 0;
 
   let missedFraction=0;
-
   for(const interval of intervals){
     const fromH=timeToH(interval.from);
-    // Skip intervals that start at or after the cutoff — acceptable sellout
-    if(fromH>=cutoffH) continue;
-    // Clip interval end to: min(until, cutoff, close)
+    if(fromH>=cutoffH) continue; // acceptable sellout — skip
     const untilH=interval.until ? Math.min(timeToH(interval.until), cutoffH, closeH) : Math.min(cutoffH, closeH);
     if(untilH<=fromH) continue;
 
-    // Sum the hourly sales that fell within [fromH, untilH)
-    // These are the sales that happened during the OOS window — i.e. what we
-    // *didn't* capture because the item was unavailable.
-    // We use the same item's curve from the same day as a proxy for demand shape.
-    let windowSales=0;
-    for(const[h,q] of Object.entries(hourlyData)){
+    // Fraction of reference-curve demand that falls within this window
+    let windowRef=0;
+    for(const[h,q] of Object.entries(refCurve)){
       const hr=parseInt(h);
-      if(hr>=fromH && hr<untilH) windowSales+=q;
+      if(hr>=fromH && hr<untilH) windowRef+=q;
     }
-    missedFraction+=windowSales/openSales;
+    missedFraction+=windowRef/refTotal;
   }
 
-  // missedFraction is the proportion of the day's demand that was blocked.
-  // Scale by total daily sales to get estimated missed units.
+  // Scale the missed fraction by THIS day's total sales to estimate missed units
+  // for this specific day's volume.
   return Math.ceil(totalSales*missedFraction);
 }
 
