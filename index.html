@@ -341,6 +341,7 @@ let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url
 // autoOosData: populated during fetchData, never persisted to Supabase
 // structure: { 'dayName|locKey': { itemName: 'HH:MM' } }
 let autoOosData = {};
+let oosAdjustmentTotals = {}; // itemName -> units added by OOS adjustment (most recent week)
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red';
 let orderQtys = {};
@@ -1089,10 +1090,12 @@ async function fetchData() {
   // then smart-average the best pair
   baselineData = {};
   autoOosData = {}; // reset and rebuild from this fetch
+  oosAdjustmentTotals = {}; // itemName -> total units added (most recent week, for display)
   const weeksUsedPerItem = {};
 
   for(const pi of cfg.prod_items){
     baselineData[pi.name] = {};
+    oosAdjustmentTotals[pi.name] = 0;
     const cutoff = pi.oos_cutoff || '23:59'; // default: never suppress
     for(let dow=0; dow<7; dow++){
       const dayName = DAYS[dow]; // DAYS = Tue..Mon
@@ -1111,7 +1114,6 @@ async function fetchData() {
           // Determine effective OOS intervals for this item/day/loc/week.
           // Manual entry (single time) takes priority, converted to a single open-ended interval.
           // Otherwise use the auto-detected intervals from this specific week.
-          // calcOosAddition handles cutoff internally — no need to filter here.
           const manualEntry = (oosData[dayName+'|'+loc]||[]).find(o=>o.name===pi.name);
           const autoIntervals = oosSamples[wIdx]?.[loc]?.[pi.name]; // [{from,until}] or undefined
 
@@ -1130,15 +1132,40 @@ async function fetchData() {
             effectiveIntervals = autoIntervals;
           }
 
+          // Build reference hourly curves from OTHER week samples (same weekday/location),
+          // excluding the day being estimated and any day that was ALSO OOS during a
+          // before-cutoff window (which would contaminate the curve with suppressed demand).
+          const buildOtherDaysHourly = (menuName) => {
+            const others=[];
+            weekSamples.forEach((otherWeekData, otherWIdx) => {
+              if(otherWIdx===wIdx) return;
+              const otherOos = oosSamples[otherWIdx]?.[loc]?.[pi.name];
+              const otherContaminated = otherOos?.some(iv => timeToH(iv.from) < timeToH(cutoff||'23:59'));
+              if(otherContaminated) return;
+              const otherHourly = lookupHourly(otherWeekData[loc]?.hourly||{}, menuName);
+              if(otherHourly) others.push(otherHourly);
+            });
+            return others;
+          };
+
           let qty = 0;
+          let oosAdded = 0;
           for(const rel of myRels){
             qty += lookupSales(sales, rel.menu) * rel.qty;
-            if(effectiveIntervals) qty += calcOosAddition(lookupHourly(hourly,rel.menu), effectiveIntervals, cutoff, openTime, closeTime)*rel.qty;
+            if(effectiveIntervals){
+              const added = calcOosAddition(lookupHourly(hourly,rel.menu), buildOtherDaysHourly(rel.menu), effectiveIntervals, cutoff, openTime, closeTime)*rel.qty;
+              qty += added; oosAdded += added;
+            }
           }
           if(myRels.length===0){
             qty = lookupSales(sales, pi.name);
-            if(effectiveIntervals) qty += calcOosAddition(lookupHourly(hourly,pi.name), effectiveIntervals, cutoff, openTime, closeTime);
+            if(effectiveIntervals){
+              const added = calcOosAddition(lookupHourly(hourly,pi.name), buildOtherDaysHourly(pi.name), effectiveIntervals, cutoff, openTime, closeTime);
+              qty += added; oosAdded += added;
+            }
           }
+          // Track most-recent-week adjustment for the "+N due to OOS" display note
+          if(wIdx===0) oosAdjustmentTotals[pi.name] += oosAdded;
           return qty;
         });
 
@@ -1254,9 +1281,11 @@ function renderBaselineTable(){
       const override=cfg.item_multipliers[pi.name];
       const isOverridden=override!==undefined;
       const safeId='mult_'+pi.name.replace(/[^a-zA-Z0-9]/g,'_');
+      const oosAdj=Math.round(oosAdjustmentTotals[pi.name]||0);
+      const oosNote=oosAdj>0?` <span class="badge bwarn" style="font-weight:500" title="Estimated units added back due to OOS events in the most recent sample week">+${oosAdj} from OOS</span>`:'';
 
       s+=`<tr>
-        <td style="font-weight:500">${pi.name}</td>
+        <td style="font-weight:500">${pi.name}${oosNote}</td>
         <td style="text-align:right;color:var(--text2)">${baseline}</td>
         <td style="text-align:center">
           <div style="display:flex;align-items:center;gap:4px;justify-content:center">
