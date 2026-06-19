@@ -750,9 +750,12 @@ function renderAutoOosList(){
     const cutoff=pi?.oos_cutoff||'23:59';
     const manualOverride=(oosData[key]||[]).find(o=>o.name===name);
 
-    const intervalsText = intervals.map(iv =>
-      iv.from + (iv.until ? ` – ${iv.until}` : ' – close')
-    ).join(', ');
+    const openTime = cfg.open_time || '08:00';
+    const intervalsText = intervals.map(iv => {
+      // Treat an until time before opening as malformed/stale — display as "close"
+      const untilDisplay = (iv.until && iv.until >= openTime) ? iv.until : null;
+      return iv.from + (untilDisplay ? ` – ${untilDisplay}` : ' – close');
+    }).join(', ');
 
     const activeIntervals = intervals.filter(iv => iv.from < cutoff);
     let statusBadge, statusNote;
@@ -925,7 +928,13 @@ function calcOosAddition(hourlyData, otherDaysHourly, intervals, cutoff, openTim
   for(const interval of intervals){
     const fromH=timeToH(interval.from);
     if(fromH>=cutoffH) continue; // acceptable sellout — skip
-    const untilH=interval.until ? Math.min(timeToH(interval.until), cutoffH, closeH) : Math.min(cutoffH, closeH);
+    let untilRawH = interval.until ? timeToH(interval.until) : null;
+    // Defensive: if `until` is before opening hour, it's almost certainly a
+    // malformed/stale value (e.g. a timezone parsing artifact) rather than a
+    // real same-day close time. Treat it as still-open through cutoff/close
+    // instead of silently dropping the whole interval.
+    if(untilRawH!==null && untilRawH < openH) untilRawH = null;
+    const untilH = untilRawH!==null ? Math.min(untilRawH, cutoffH, closeH) : Math.min(cutoffH, closeH);
     if(untilH<=fromH) continue;
 
     // Fraction of reference-curve demand that falls within this window
