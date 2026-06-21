@@ -1141,10 +1141,13 @@ async function fetchData() {
 
           const dayLocOosMap = oosSamples[wIdx]?.[loc] || {}; // { menuOrItemName: [{from,until}] }
           const candidateNames = [pi.name, ...myRels.map(r=>r.menu)];
+          const matchedEvtNames = new Set(); // dedupe: a single Square event should only count once
           let autoIntervals = null;
           for(const candidate of candidateNames){
             for(const[evtName, intervals] of Object.entries(dayLocOosMap)){
+              if(matchedEvtNames.has(evtName)) continue; // already matched via another candidate
               if(nameMatches(evtName, candidate)){
+                matchedEvtNames.add(evtName);
                 autoIntervals = autoIntervals ? autoIntervals.concat(intervals) : intervals;
               }
             }
