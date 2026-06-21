@@ -342,6 +342,7 @@ let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url
 // structure: { 'dayName|locKey': { itemName: 'HH:MM' } }
 let autoOosData = {};
 let oosAdjustmentTotals = {}; // itemName -> units added by OOS adjustment (most recent week)
+let oosMissedSalesDetail = {}; // 'Day|Loc' -> { itemName: estimatedMissedUnits } (most recent week, for OOS tab)
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red';
 let orderQtys = {};
@@ -744,7 +745,7 @@ function renderAutoOosList(){
     return;
   }
   const closeTime=cfg.close_time||'17:00';
-  let html='<table class="tbl"><thead><tr><th>Item</th><th>OOS intervals</th><th>Cutoff</th><th>Status</th></tr></thead><tbody>';
+  let html='<table class="tbl"><thead><tr><th>Item</th><th>OOS intervals</th><th>Cutoff</th><th>Status</th><th>Est. missed sales</th></tr></thead><tbody>';
   for(const [name, intervals] of entries.sort((a,b)=>a[0].localeCompare(b[0]))){
     const pi=cfg.prod_items.find(p=>p.name===name);
     const cutoff=pi?.oos_cutoff||'23:59';
@@ -767,11 +768,18 @@ function renderAutoOosList(){
       const count = activeIntervals.length;
       statusBadge='bwarn'; statusNote=`${count} interval${count>1?'s':''} adjusted`;
     }
+
+    const missedSales = oosMissedSalesDetail[key]?.[name];
+    const missedSalesText = (missedSales!==undefined)
+      ? (missedSales>0 ? `+${missedSales}` : '—')
+      : '<span style="color:var(--text3)" title="Fetch data on the Generate tab to calculate">not calculated</span>';
+
     html+=`<tr>
       <td style="font-weight:500">${name}</td>
       <td style="font-size:12px;color:var(--text2)">${intervalsText}</td>
       <td style="color:var(--text2)">${cutoff==='23:59'?'—':cutoff}</td>
       <td><span class="badge ${statusBadge}">${statusNote}</span></td>
+      <td style="font-weight:600;color:${missedSales>0?'var(--warn)':'var(--text2)'}">${missedSalesText}</td>
     </tr>`;
   }
   html+='</tbody></table>';
@@ -1100,6 +1108,7 @@ async function fetchData() {
   baselineData = {};
   autoOosData = {}; // reset and rebuild from this fetch
   oosAdjustmentTotals = {}; // itemName -> total units added (most recent week, for display)
+  oosMissedSalesDetail = {}; // reset detail cache for OOS tab
   const weeksUsedPerItem = {};
 
   for(const pi of cfg.prod_items){
@@ -1189,7 +1198,12 @@ async function fetchData() {
             }
           }
           // Track most-recent-week adjustment for the "+N due to OOS" display note
-          if(wIdx===0) oosAdjustmentTotals[pi.name] += oosAdded;
+          if(wIdx===0){
+            oosAdjustmentTotals[pi.name] += oosAdded;
+            const detailKey = dayName+'|'+loc;
+            if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
+            oosMissedSalesDetail[detailKey][pi.name] = Math.round(oosAdded);
+          }
           return qty;
         });
 
