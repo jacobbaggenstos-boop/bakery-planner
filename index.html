@@ -713,16 +713,37 @@ function addRel(){
 
 function removeRel(i){ cfg.rels.splice(i,1); saveConfigField('rels',cfg.rels); renderRels(); renderProdItems(); }
 
+function toggleRelOosExclude(i){
+  cfg.rels[i].excludeOos = !cfg.rels[i].excludeOos;
+  saveConfigField('rels',cfg.rels);
+  renderRels();
+}
+
 function renderRels(){
   const el=document.getElementById('rel-list');
   if(!cfg.rels.length){el.innerHTML='<p class="empty">No relationships yet.</p>';return;}
   const byProd={};
   for(const r of cfg.rels){if(!byProd[r.prod])byProd[r.prod]=[];byProd[r.prod].push(r);}
-  let html='<table class="tbl"><thead><tr><th>Menu item</th><th>Uses</th><th>Production item</th><th></th></tr></thead><tbody>';
+  let html='<table class="tbl"><thead><tr><th>Menu item</th><th>Uses</th><th>Production item</th><th>OOS tracking</th><th></th></tr></thead><tbody>';
   for(const [prod,rs] of Object.entries(byProd)){
     const pi=cfg.prod_items.find(p=>p.name===prod);
-    html+=`<tr class="tbl-section"><td colspan="4">${prod} <span class="badge ${pi?.sec==='kitchen'?'bpurp':'binfo'}">${pi?.sec||''}</span></td></tr>`;
-    html+=rs.map(r=>{const i=cfg.rels.indexOf(r);return`<tr><td>${r.menu}</td><td style="color:var(--text2)">${r.qty}×</td><td>${r.prod}</td><td><button class="btn btnsm" onclick="removeRel(${i})">✕</button></td></tr>`;}).join('');
+    html+=`<tr class="tbl-section"><td colspan="5">${prod} <span class="badge ${pi?.sec==='kitchen'?'bpurp':'binfo'}">${pi?.sec||''}</span></td></tr>`;
+    html+=rs.map(r=>{
+      const i=cfg.rels.indexOf(r);
+      const excluded = !!r.excludeOos;
+      return `<tr>
+        <td>${r.menu}</td>
+        <td style="color:var(--text2)">${r.qty}×</td>
+        <td>${r.prod}</td>
+        <td>
+          <button class="btn btnsm ${excluded?'':'btnp'}" onclick="toggleRelOosExclude(${i})"
+            title="${excluded ? 'OOS events for this menu item are ignored for this production item — click to re-enable' : 'OOS events adjust this production item — click to exclude for bundle items where one component should not affect the others'}">
+            ${excluded ? 'Excluded' : 'Tracked'}
+          </button>
+        </td>
+        <td><button class="btn btnsm" onclick="removeRel(${i})">✕</button></td>
+      </tr>`;
+    }).join('');
   }
   html+='</tbody></table>';
   el.innerHTML=html;
@@ -1170,7 +1191,7 @@ async function fetchData() {
           const manualEntry = (oosData[dayName+'|'+loc]||[]).find(o=>o.name===pi.name);
 
           const dayLocOosMap = oosSamples[wIdx]?.[loc] || {}; // { menuOrItemName: [{from,until}] }
-          const candidateNames = [pi.name, ...myRels.map(r=>r.menu)];
+          const candidateNames = [pi.name, ...myRels.filter(r=>!r.excludeOos).map(r=>r.menu)];
           const matchedEvtNames = new Set(); // dedupe: a single Square event should only count once
           let autoIntervals = null;
           for(const candidate of candidateNames){
