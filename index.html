@@ -905,6 +905,36 @@ function lookupHourly(hourly,menuName){
 // cutoff/openTime/closeTime: 'HH:MM'
 //
 // Returns the estimated missed units for this day.
+// Merges overlapping or touching/near-duplicate time intervals into a minimal
+// set of non-overlapping intervals. Used when multiple Square menu items that
+// map to the same production item go OOS together (e.g. variant items sharing
+// a kitchen ingredient) — without this they'd each count as a separate stockout.
+//
+// intervals: [{from:'HH:MM', until:'HH:MM'|null}]
+// "until: null" means open-ended (still OOS) — treated as the latest possible end.
+function mergeIntervals(intervals){
+  if(!intervals?.length) return intervals;
+  const sorted = intervals.slice().sort((a,b)=> timeToH(a.from)-timeToH(b.from));
+  const merged = [sorted[0]];
+  for(let i=1;i<sorted.length;i++){
+    const cur = sorted[i];
+    const last = merged[merged.length-1];
+    const lastUntilH = last.until ? timeToH(last.until) : Infinity;
+    const curFromH = timeToH(cur.from);
+    // Merge if they overlap or are within 5 minutes of each other (same real event,
+    // just logged a few minutes apart by the 15-min tracker resolution)
+    if(curFromH <= lastUntilH + (5/60)){
+      const curUntilH = cur.until ? timeToH(cur.until) : Infinity;
+      if(curUntilH > lastUntilH){
+        last.until = cur.until; // extend (or set to null if cur is open-ended)
+      }
+    } else {
+      merged.push(cur);
+    }
+  }
+  return merged;
+}
+
 function calcOosAddition(hourlyData, otherDaysHourly, intervals, cutoff, openTime, closeTime){
   if(!hourlyData || !intervals?.length) return 0;
   const openH=timeToH(openTime), closeH=timeToH(closeTime), cutoffH=timeToH(cutoff||'23:59');
@@ -1152,6 +1182,12 @@ async function fetchData() {
               }
             }
           }
+          // When a production item maps to MULTIPLE menu items (e.g. a kitchen
+          // ingredient used across several sandwich/tartine variants), those variants
+          // often sell out together as one real-world stockout, each logged as its
+          // own Square event. Merge overlapping/touching intervals so we count one
+          // stockout once instead of N times.
+          if(autoIntervals?.length>1) autoIntervals = mergeIntervals(autoIntervals);
 
           // Accumulate autoOosData for OOS tab display (most recent week only)
           if(wIdx===0 && autoIntervals?.length){
