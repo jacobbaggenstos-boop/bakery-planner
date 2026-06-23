@@ -961,52 +961,64 @@ function calcOosAddition(hourlyData, otherDaysHourly, intervals, cutoff, openTim
   const openH=timeToH(openTime), closeH=timeToH(closeTime), cutoffH=timeToH(cutoff||'23:59');
   const totalSales=Object.values(hourlyData).reduce((a,b)=>a+b,0);
 
-  // Build a reference hourly curve from other clean days (sum across days per hour)
-  const cleanDays = (otherDaysHourly||[]).filter(h=>h && Object.keys(h).length);
-  const refCurve={}; // hour -> total qty across clean days
-  let refTotal=0;
-  for(const dayHourly of cleanDays){
+  // Build a reference hourly curve from other days (sum across days per hour).
+  // Other days may be partial (contaminated hours zeroed out) — we still use them,
+  // but we need to normalize correctly. For each reference day, we compute its
+  // total observed sales (non-zeroed hours only) and scale the curve to a
+  // consistent per-day unit so partial days don't under-weight the reference.
+  const refDays = (otherDaysHourly||[]).filter(h=>h && Object.keys(h).length);
+  const refCurve={}; // hour -> normalized demand share (summed across days)
+  let refDayCount=0;
+
+  for(const dayHourly of refDays){
+    // Total observed sales for this reference day (open hours only)
+    let dayTotal=0;
     for(const[h,q] of Object.entries(dayHourly)){
       const hr=parseInt(h);
-      if(hr>=openH && hr<closeH){ refCurve[hr]=(refCurve[hr]||0)+q; refTotal+=q; }
+      if(hr>=openH && hr<closeH) dayTotal+=q;
+    }
+    if(dayTotal===0) continue;
+    refDayCount++;
+    // Add this day's normalized hourly share to the reference curve
+    for(const[h,q] of Object.entries(dayHourly)){
+      const hr=parseInt(h);
+      if(hr>=openH && hr<closeH) refCurve[hr]=(refCurve[hr]||0)+(q/dayTotal);
     }
   }
 
-  // Fallback: if no clean reference days exist, use this day's own curve
-  // (better than nothing, though it will under-count as noted above)
-  const useOwnCurve = cleanDays.length===0;
-  if(useOwnCurve){
+  // Fallback: if no reference days, use this day's own curve
+  if(refDayCount===0){
+    let dayTotal=0;
+    for(const[h,q] of Object.entries(hourlyData)){
+      const hr=parseInt(h); if(hr>=openH && hr<closeH) dayTotal+=q;
+    }
+    if(dayTotal===0) return 0;
     for(const[h,q] of Object.entries(hourlyData)){
       const hr=parseInt(h);
-      if(hr>=openH && hr<closeH){ refCurve[hr]=(refCurve[hr]||0)+q; refTotal+=q; }
+      if(hr>=openH && hr<closeH) refCurve[hr]=(refCurve[hr]||0)+(q/dayTotal);
     }
+    refDayCount=1;
   }
-  if(refTotal===0) return 0;
 
+  // refCurve[hr] is now the average fraction of daily demand at each hour
+  // (summed across refDayCount days, so divide by refDayCount to normalize)
   let missedFraction=0;
   for(const interval of intervals){
     const fromH=timeToH(interval.from);
-    if(fromH>=cutoffH) continue; // acceptable sellout — skip
+    if(fromH>=cutoffH) continue;
     let untilRawH = interval.until ? timeToH(interval.until) : null;
-    // Defensive: if `until` is before opening hour, it's almost certainly a
-    // malformed/stale value (e.g. a timezone parsing artifact) rather than a
-    // real same-day close time. Treat it as still-open through cutoff/close
-    // instead of silently dropping the whole interval.
     if(untilRawH!==null && untilRawH < openH) untilRawH = null;
     const untilH = untilRawH!==null ? Math.min(untilRawH, cutoffH, closeH) : Math.min(cutoffH, closeH);
     if(untilH<=fromH) continue;
 
-    // Fraction of reference-curve demand that falls within this window
-    let windowRef=0;
-    for(const[h,q] of Object.entries(refCurve)){
+    let windowShare=0;
+    for(const[h,share] of Object.entries(refCurve)){
       const hr=parseInt(h);
-      if(hr>=fromH && hr<untilH) windowRef+=q;
+      if(hr>=fromH && hr<untilH) windowShare+=share;
     }
-    missedFraction+=windowRef/refTotal;
+    missedFraction+=windowShare/refDayCount;
   }
 
-  // Scale the missed fraction by THIS day's total sales to estimate missed units
-  // for this specific day's volume.
   return Math.ceil(totalSales*missedFraction);
 }
 
@@ -1233,10 +1245,31 @@ async function fetchData() {
             weekSamples.forEach((otherWeekData, otherWIdx) => {
               if(otherWIdx===wIdx) return;
               const otherOos = oosSamples[otherWIdx]?.[loc]?.[pi.name];
-              const otherContaminated = otherOos?.some(iv => timeToH(iv.from) < timeToH(cutoff||'23:59'));
-              if(otherContaminated) return;
               const otherHourly = lookupHourly(otherWeekData[loc]?.hourly||{}, menuName);
-              if(otherHourly) others.push(otherHourly);
+              if(!otherHourly) return;
+
+              // Instead of excluding the whole day when it was also OOS,
+              // zero out only the contaminated hours (hours that fell within
+              // an OOS interval before the cutoff). The remaining hours still
+              // reflect real demand shape and are useful for the reference curve.
+              const contamIntervals = otherOos?.filter(iv => timeToH(iv.from) < timeToH(cutoff||'23:59')) || [];
+              if(!contamIntervals.length){
+                others.push(otherHourly);
+              } else {
+                // Build a partial curve with contaminated hours zeroed
+                const partial = {};
+                for(const[h,q] of Object.entries(otherHourly)){
+                  const hr=parseInt(h);
+                  const inOos = contamIntervals.some(iv => {
+                    const fromH=timeToH(iv.from);
+                    const untilH=iv.until ? Math.min(timeToH(iv.until), timeToH(cutoff||'23:59')) : timeToH(cutoff||'23:59');
+                    return hr>=fromH && hr<untilH;
+                  });
+                  partial[h] = inOos ? 0 : q;
+                }
+                // Only include if there's at least some non-zero data left
+                if(Object.values(partial).some(v=>v>0)) others.push(partial);
+              }
             });
             return others;
           };
