@@ -1112,20 +1112,26 @@ function getLastNWeekdays(dayOfWeek, n) {
 // Smart average: given 2+ week values, if two closest are within 20%, use those two.
 // Otherwise keep trying with more weeks.
 function smartPairAverage(values) {
-  if(values.length === 0) return 0;
-  if(values.length === 1) return values[0];
-  // Find the pair with smallest relative difference
-  let bestPair = [values[0], values[1]];
-  let bestDiff = Infinity;
+  const indices = smartPairIndices(values);
+  if(!indices) return values.length ? values[0] : 0;
+  return (values[indices[0]]+values[indices[1]])/2;
+}
+
+// Returns the indices [i, j] of the best pair to average, or null if < 2 values.
+// Uses raw values only — call this on rawQty data, then apply to adjQty data
+// so OOS adjustments don't skew which weeks get selected.
+function smartPairIndices(values) {
+  if(values.length === 0) return null;
+  if(values.length === 1) return null;
+  let bestI=0, bestJ=1, bestDiff=Infinity;
   for(let i=0; i<values.length; i++){
     for(let j=i+1; j<values.length; j++){
-      const avg = (values[i]+values[j])/2;
-      if(avg === 0) { bestPair=[values[i],values[j]]; bestDiff=0; continue; }
-      const diff = Math.abs(values[i]-values[j])/avg;
-      if(diff < bestDiff){ bestDiff=diff; bestPair=[values[i],values[j]]; }
+      const avg=(values[i]+values[j])/2;
+      const diff=avg===0 ? 0 : Math.abs(values[i]-values[j])/avg;
+      if(diff<bestDiff){ bestDiff=diff; bestI=i; bestJ=j; }
     }
   }
-  return (bestPair[0]+bestPair[1])/2;
+  return [bestI, bestJ];
 }
 
 async function fetchData() {
@@ -1346,9 +1352,21 @@ async function fetchData() {
           return {qty, rawQty};
         });
 
-        // Smart averaging: use best pair
-        const avg = smartPairAverage(weeklyQtys.map(w=>w.qty));
-        const rawAvg = smartPairAverage(weeklyQtys.map(w=>w.rawQty));
+        // Smart averaging: use best pair based on RAW quantities (no OOS)
+        // so OOS adjustments don't influence which weeks get selected.
+        // Then apply the same pair selection to the OOS-adjusted quantities.
+        const rawQtys = weeklyQtys.map(w=>w.rawQty);
+        const adjQtys = weeklyQtys.map(w=>w.qty);
+
+        // Find which pair smartPairAverage would select on raw data
+        const bestPairIndices = smartPairIndices(rawQtys);
+        const rawAvg = bestPairIndices
+          ? (rawQtys[bestPairIndices[0]] + rawQtys[bestPairIndices[1]]) / 2
+          : smartPairAverage(rawQtys);
+        const avg = bestPairIndices
+          ? (adjQtys[bestPairIndices[0]] + adjQtys[bestPairIndices[1]]) / 2
+          : smartPairAverage(adjQtys);
+
         if(pi.sec==='kitchen'){
           const buf = 1+(parseFloat(document.getElementById('kitchen-buffer')?.value)||cfg.kitchen_buffer||5)/100;
           baselineData[pi.name][dayName][loc] = avg * buf;
