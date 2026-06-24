@@ -1342,9 +1342,8 @@ async function fetchData() {
               qty += added; oosAdded += added;
             }
           }
-          // Track most-recent-week adjustment for the "+N due to OOS" display note
+          // Track per-day/loc missed sales for the OOS tab display
           if(wIdx===0){
-            oosAdjustmentTotals[pi.name] += oosAdded;
             const detailKey = dayName+'|'+loc;
             if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
             oosMissedSalesDetail[detailKey][pi.name] = Math.round(oosAdded);
@@ -1457,6 +1456,12 @@ function getItemRawBaselineTotal(itemName){
   return Math.round(total);
 }
 
+// Derive OOS adjustment from the actual difference between the two baselines —
+// this always matches what's in the numbers, regardless of which week pair was selected.
+function getItemOosAdjTotal(itemName){
+  return Math.round(getItemBaselineTotal(itemName) - getItemRawBaselineTotal(itemName));
+}
+
 function toggleAllDays(){
   showDailyBreakdown=!showDailyBreakdown;
   document.getElementById('toggle-days-btn').textContent=showDailyBreakdown?'Hide daily':'Show daily';
@@ -1493,8 +1498,8 @@ function renderBaselineTable(){
 
     for(const pi of items){
       const rawBase=getItemRawBaselineTotal(pi.name);
-      const oosAdj=oosEnabled?Math.round(oosAdjustmentTotals[pi.name]||0):0;
-      const thisWeekBase=getItemBaselineTotal(pi.name);
+      const oosAdj=oosEnabled?getItemOosAdjTotal(pi.name):0;
+      const thisWeekBase=oosEnabled?getItemBaselineTotal(pi.name):rawBase;
       const final=getItemWeeklyTotal(pi.name);
       const override=cfg.item_multipliers[pi.name];
       const isOverridden=override!==undefined;
