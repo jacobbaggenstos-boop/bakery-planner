@@ -1213,6 +1213,7 @@ async function fetchData() {
       const weekSamples = salesByDow[dowIndex];
       const oosSamples = oosByDow[dowIndex];
       baselineData[pi.name][dayName] = {};
+      rawBaselineData[pi.name][dayName] = {};
 
       for(const loc of LOCS){
         const weeklyQtys = weekSamples.map((weekData, wIdx) => {
