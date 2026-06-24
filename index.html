@@ -290,7 +290,7 @@ input[type=range]{accent-color:var(--text)}
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
             <div>
               <div class="card-title" style="margin-bottom:2px">Step 3 — Review &amp; adjust <span id="weeks-used-label" class="badge binfo" style="margin-left:4px"></span></div>
-              <div class="hint" style="margin:0">Adjust any item's % to override the projection. Final numbers update live.</div>
+              <div class="hint" style="margin:0">Adjust any item's % to override the projection. Final numbers update live. <span style="color:var(--text3)">Final total includes per-cell rounding and may be a few units higher than the baseline.</span></div>
             </div>
             <div style="display:flex;gap:8px;align-items:center">
               <button class="btn btnp btnsm" onclick="toggleOosEnabled()" id="oos-toggle-btn">OOS adj: ON</button>
@@ -1117,21 +1117,29 @@ function smartPairAverage(values) {
   return (values[indices[0]]+values[indices[1]])/2;
 }
 
-// Returns the indices [i, j] of the best pair to average, or null if < 2 values.
-// Uses raw values only — call this on rawQty data, then apply to adjQty data
-// so OOS adjustments don't skew which weeks get selected.
+// Returns the indices [i, j] of the pair to average, or null if < 2 values.
+// Strategy: default to the two most recent weeks (indices 0 and 1, since
+// getLastNWeekdays returns most-recent-first). Only deviate if one week is
+// an outlier — more than 20% away from the mean of the other two — in which
+// case drop that outlier and use the other two instead.
+// This means recent trends are respected by default.
 function smartPairIndices(values) {
   if(values.length === 0) return null;
-  if(values.length === 1) return null;
-  let bestI=0, bestJ=1, bestDiff=Infinity;
-  for(let i=0; i<values.length; i++){
-    for(let j=i+1; j<values.length; j++){
-      const avg=(values[i]+values[j])/2;
-      const diff=avg===0 ? 0 : Math.abs(values[i]-values[j])/avg;
-      if(diff<bestDiff){ bestDiff=diff; bestI=i; bestJ=j; }
+  if(values.length < 2) return null;
+  if(values.length === 2) return [0, 1]; // only two weeks, use both
+
+  // With 3 weeks: check if any single week is an outlier vs the mean of the other two
+  const OUTLIER_THRESH = 0.20;
+  for(const drop of [0, 1, 2]){
+    const others = [0,1,2].filter(i=>i!==drop);
+    const otherMean = (values[others[0]]+values[others[1]])/2;
+    if(otherMean > 0 && Math.abs(values[drop]-otherMean)/otherMean > OUTLIER_THRESH){
+      // This week is an outlier — use the other two
+      return [others[0], others[1]];
     }
   }
-  return [bestI, bestJ];
+  // No outliers — use the two most recent weeks (indices 0 and 1)
+  return [0, 1];
 }
 
 async function fetchData() {
