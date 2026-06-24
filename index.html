@@ -292,7 +292,10 @@ input[type=range]{accent-color:var(--text)}
               <div class="card-title" style="margin-bottom:2px">Step 3 — Review &amp; adjust <span id="weeks-used-label" class="badge binfo" style="margin-left:4px"></span></div>
               <div class="hint" style="margin:0">Adjust any item's % to override the projection. Final numbers update live.</div>
             </div>
-            <button class="btn btnsm" onclick="toggleAllDays()" id="toggle-days-btn">Show daily</button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btnp btnsm" onclick="toggleOosEnabled()" id="oos-toggle-btn">OOS adj: ON</button>
+              <button class="btn btnsm" onclick="toggleAllDays()" id="toggle-days-btn">Show daily</button>
+            </div>
           </div>
           <div id="baseline-table"></div>
         </div>
@@ -343,6 +346,8 @@ let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url
 let autoOosData = {};
 let oosAdjustmentTotals = {}; // itemName -> units added by OOS adjustment (most recent week)
 let oosMissedSalesDetail = {}; // 'Day|Loc' -> { itemName: estimatedMissedUnits } (most recent week, for OOS tab)
+let rawBaselineData = {}; // same as baselineData but WITHOUT OOS additions — for the historical avg column
+let oosEnabled = true; // toggle for Step 3 — whether OOS adjustments are included in final numbers
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red';
 let orderQtys = {};
@@ -865,10 +870,32 @@ async function removeOosEntry(key, i){
 // ── SQUARE DATA FETCHING ──────────────────────────────────
 function timeToH(t){ const[h,m]=t.split(':').map(Number); return h+m/60; }
 
+// Converts a local Date object to the ISO string for midnight Pacific time on that
+// calendar date. Square's API uses UTC timestamps, so we need to send the correct
+// UTC equivalent of "midnight Pacific" to fetch a full calendar day's orders.
+function pacificMidnightISO(date){
+  const d = new Date(date);
+  // Format as YYYY-MM-DD in Pacific time
+  const pacificDate = d.toLocaleDateString('en-CA', {timeZone:'America/Los_Angeles'});
+  const [y,m,day] = pacificDate.split('-').map(Number);
+  // Find the UTC instant that corresponds to midnight Pacific on this date
+  // by trying PDT (-7) and PST (-8) offsets and verifying with Intl
+  for(const offsetH of [7, 8]){
+    const candidate = new Date(Date.UTC(y, m-1, day, offsetH, 0, 0));
+    const check = candidate.toLocaleString('en-US', {
+      timeZone:'America/Los_Angeles',
+      hour:'2-digit', minute:'2-digit', hour12:false
+    });
+    if(check === '00:00') return candidate.toISOString();
+  }
+  // Fallback
+  return new Date(Date.UTC(y, m-1, day, 7, 0, 0)).toISOString();
+}
+
 async function fetchOrders(locId,startISO,endISO){
   let orders=[],cursor=null;
   do{
-    const body={location_ids:[locId],query:{filter:{date_time_filter:{created_at:{start_at:startISO,end_at:endISO}},state_filter:{states:['COMPLETED']}}}};
+    const body={location_ids:[locId],query:{filter:{date_time_filter:{closed_at:{start_at:startISO,end_at:endISO}},state_filter:{states:['COMPLETED']}}}};
     if(cursor)body.cursor=cursor;
     const r=await fetch(sqUrl('/v2/orders/search'),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
     const d=await r.json();
@@ -883,7 +910,7 @@ function aggregateOrders(orders){
   const counts={},hourly={};
   for(const o of orders){
     if(!o.line_items)continue;
-    const hr=new Date(o.created_at).getHours();
+    const hr=new Date(o.closed_at||o.created_at).getHours();
     for(const li of o.line_items){
       const base=li.name||'?';
       const vn=li.variation_name||'';
@@ -1150,9 +1177,8 @@ async function fetchData() {
         if(!locId){ weekData[loc]={counts:{},hourly:{}}; weekOos[loc]={}; continue; }
         fetched++;
         setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} ${dowNames[dow]}s… [${fetched}/${totalFetches}]`,'info');
-        const startISO = new Date(date).toISOString();
-        const endDate = new Date(date); endDate.setDate(endDate.getDate()+1);
-        const endISO = endDate.toISOString();
+        const startISO = pacificMidnightISO(date);
+        const endISO = pacificMidnightISO(new Date(new Date(date).setDate(date.getDate()+1)));
         try{
           const orders = await fetchOrders(locId, startISO, endISO);
           weekData[loc] = aggregateOrders(orders);
@@ -1169,6 +1195,7 @@ async function fetchData() {
   // For each production item + day-of-week + location, compute qty for each week,
   // then smart-average the best pair
   baselineData = {};
+  rawBaselineData = {};
   autoOosData = {}; // reset and rebuild from this fetch
   oosAdjustmentTotals = {}; // itemName -> total units added (most recent week, for display)
   oosMissedSalesDetail = {}; // reset detail cache for OOS tab
@@ -1176,6 +1203,7 @@ async function fetchData() {
 
   for(const pi of cfg.prod_items){
     baselineData[pi.name] = {};
+    rawBaselineData[pi.name] = {};
     oosAdjustmentTotals[pi.name] = 0;
     const cutoff = pi.oos_cutoff || '23:59'; // default: never suppress
     for(let dow=0; dow<7; dow++){
@@ -1244,19 +1272,32 @@ async function fetchData() {
             const others=[];
             weekSamples.forEach((otherWeekData, otherWIdx) => {
               if(otherWIdx===wIdx) return;
-              const otherOos = oosSamples[otherWIdx]?.[loc]?.[pi.name];
+              const otherDayOosMap = oosSamples[otherWIdx]?.[loc] || {};
+
+              // Find OOS intervals for this production item on the other day,
+              // using the same fuzzy name matching used for the main interval lookup.
+              // This correctly handles accent/encoding mismatches between the
+              // production item name and the Square catalog name.
+              let otherOos = null;
+              const matchedOtherEvtNames = new Set();
+              for(const candidate of candidateNames){
+                for(const[evtName, ivs] of Object.entries(otherDayOosMap)){
+                  if(matchedOtherEvtNames.has(evtName)) continue;
+                  if(nameMatches(evtName, candidate)){
+                    matchedOtherEvtNames.add(evtName);
+                    otherOos = otherOos ? otherOos.concat(ivs) : ivs;
+                  }
+                }
+              }
+              if(otherOos?.length>1) otherOos = mergeIntervals(otherOos);
+
               const otherHourly = lookupHourly(otherWeekData[loc]?.hourly||{}, menuName);
               if(!otherHourly) return;
 
-              // Instead of excluding the whole day when it was also OOS,
-              // zero out only the contaminated hours (hours that fell within
-              // an OOS interval before the cutoff). The remaining hours still
-              // reflect real demand shape and are useful for the reference curve.
               const contamIntervals = otherOos?.filter(iv => timeToH(iv.from) < timeToH(cutoff||'23:59')) || [];
               if(!contamIntervals.length){
                 others.push(otherHourly);
               } else {
-                // Build a partial curve with contaminated hours zeroed
                 const partial = {};
                 for(const[h,q] of Object.entries(otherHourly)){
                   const hr=parseInt(h);
@@ -1267,7 +1308,6 @@ async function fetchData() {
                   });
                   partial[h] = inOos ? 0 : q;
                 }
-                // Only include if there's at least some non-zero data left
                 if(Object.values(partial).some(v=>v>0)) others.push(partial);
               }
             });
@@ -1276,15 +1316,20 @@ async function fetchData() {
 
           let qty = 0;
           let oosAdded = 0;
+          let rawQty = 0; // same as qty but without OOS additions — for rawBaselineData
           for(const rel of myRels){
-            qty += lookupSales(sales, rel.menu) * rel.qty;
+            const salesQty = lookupSales(sales, rel.menu) * rel.qty;
+            qty += salesQty;
+            rawQty += salesQty;
             if(effectiveIntervals){
               const added = calcOosAddition(lookupHourly(hourly,rel.menu), buildOtherDaysHourly(rel.menu), effectiveIntervals, cutoff, openTime, closeTime)*rel.qty;
               qty += added; oosAdded += added;
             }
           }
           if(myRels.length===0){
-            qty = lookupSales(sales, pi.name);
+            const salesQty = lookupSales(sales, pi.name);
+            qty = salesQty;
+            rawQty = salesQty;
             if(effectiveIntervals){
               const added = calcOosAddition(lookupHourly(hourly,pi.name), buildOtherDaysHourly(pi.name), effectiveIntervals, cutoff, openTime, closeTime);
               qty += added; oosAdded += added;
@@ -1297,16 +1342,19 @@ async function fetchData() {
             if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
             oosMissedSalesDetail[detailKey][pi.name] = Math.round(oosAdded);
           }
-          return qty;
+          return {qty, rawQty};
         });
 
         // Smart averaging: use best pair
-        const avg = smartPairAverage(weeklyQtys);
+        const avg = smartPairAverage(weeklyQtys.map(w=>w.qty));
+        const rawAvg = smartPairAverage(weeklyQtys.map(w=>w.rawQty));
         if(pi.sec==='kitchen'){
           const buf = 1+(parseFloat(document.getElementById('kitchen-buffer')?.value)||cfg.kitchen_buffer||5)/100;
           baselineData[pi.name][dayName][loc] = avg * buf;
+          rawBaselineData[pi.name][dayName][loc] = rawAvg * buf;
         } else {
           baselineData[pi.name][dayName][loc] = avg;
+          rawBaselineData[pi.name][dayName][loc] = rawAvg;
         }
       }
     }
@@ -1359,10 +1407,11 @@ function getProjectionMultiplier(){
 }
 
 function getFinalQty(itemName, day, loc){
-  const base = baselineData[itemName]?.[day]?.[loc]||0;
+  const base = oosEnabled
+    ? (baselineData[itemName]?.[day]?.[loc]||0)
+    : (rawBaselineData[itemName]?.[day]?.[loc]||0);
   const projMult = getProjectionMultiplier();
   const itemOverride = cfg.item_multipliers[itemName];
-  // Item override replaces projection for that item
   const effectiveMult = itemOverride !== undefined ? itemOverride/100 : projMult;
   return Math.ceil(base * effectiveMult);
 }
@@ -1381,9 +1430,25 @@ function getItemBaselineTotal(itemName){
   return Math.round(total);
 }
 
+function getItemRawBaselineTotal(itemName){
+  let total=0;
+  for(const day of DAYS) for(const loc of LOCS){
+    total+=(rawBaselineData[itemName]?.[day]?.[loc]||0);
+  }
+  return Math.round(total);
+}
+
 function toggleAllDays(){
   showDailyBreakdown=!showDailyBreakdown;
   document.getElementById('toggle-days-btn').textContent=showDailyBreakdown?'Hide daily':'Show daily';
+  renderBaselineTable();
+}
+
+function toggleOosEnabled(){
+  oosEnabled=!oosEnabled;
+  const btn=document.getElementById('oos-toggle-btn');
+  btn.textContent=oosEnabled?'OOS adj: ON':'OOS adj: OFF';
+  btn.className='btn '+(oosEnabled?'btnp':'');
   renderBaselineTable();
 }
 
@@ -1398,42 +1463,45 @@ function renderBaselineTable(){
     if(!items.length)return'';
     let s=`<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:10px 0 6px">${label}</div>`;
 
-    // Table header
     s+=`<table class="tbl" style="margin-bottom:14px"><thead><tr>
       <th>Item</th>
-      <th style="text-align:right">Baseline</th>
+      <th style="text-align:right" title="Smart-pair average of last 2 weeks, excluding OOS adjustments">Hist. avg</th>
+      <th style="text-align:right;color:var(--warn)" title="Estimated missed sales added back due to OOS events">OOS adj</th>
+      <th style="text-align:right;color:var(--info)" title="Historical average + OOS adjustment + global projection">This week baseline</th>
       <th style="text-align:center;width:110px">Override %</th>
-      <th style="text-align:right;color:var(--info)">Final total</th>
+      <th style="text-align:right;color:var(--info);font-weight:700">Final total</th>
     </tr></thead><tbody>`;
 
     for(const pi of items){
-      const baseline=getItemBaselineTotal(pi.name);
+      const rawBase=getItemRawBaselineTotal(pi.name);
+      const oosAdj=oosEnabled?Math.round(oosAdjustmentTotals[pi.name]||0):0;
+      const thisWeekBase=getItemBaselineTotal(pi.name);
       const final=getItemWeeklyTotal(pi.name);
       const override=cfg.item_multipliers[pi.name];
       const isOverridden=override!==undefined;
       const safeId='mult_'+pi.name.replace(/[^a-zA-Z0-9]/g,'_');
-      const oosAdj=Math.round(oosAdjustmentTotals[pi.name]||0);
-      const oosNote=oosAdj>0?` <span class="badge bwarn" style="font-weight:500" title="Estimated units added back due to OOS events in the most recent sample week">+${oosAdj} from OOS</span>`:'';
 
       s+=`<tr>
-        <td style="font-weight:500">${pi.name}${oosNote}</td>
-        <td style="text-align:right;color:var(--text2)">${baseline}</td>
+        <td style="font-weight:500">${pi.name}</td>
+        <td style="text-align:right;color:var(--text2)">${rawBase}</td>
+        <td style="text-align:right;color:${oosAdj>0?'var(--warn)':'var(--text3)'};font-weight:${oosAdj>0?600:400}">${oosAdj>0?'+'+oosAdj:'—'}</td>
+        <td style="text-align:right;color:var(--text2)">${Math.round(oosEnabled?thisWeekBase:rawBase)}</td>
         <td style="text-align:center">
           <div style="display:flex;align-items:center;gap:4px;justify-content:center">
             <input type="number" id="${safeId}" value="${isOverridden?override:''}"
               placeholder="${Math.round(projMult*100)}"
               min="0" max="500" step="5"
               style="width:65px;font-size:13px;text-align:right;${isOverridden?'border-color:var(--info);':'opacity:.6'}"
-              oninput="onItemMultChange('${pi.name.replace(/'/g,"\'")}',this)"/>
+              oninput="onItemMultChange('${pi.name.replace(/'/g,"\\'")}',this)"/>
             <span style="font-size:12px;color:var(--text2)">%</span>
-            ${isOverridden?`<button onclick="clearItemMult('${pi.name.replace(/'/g,"\'")}',this)" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:0" title="Reset to projection">✕</button>`:''}
+            ${isOverridden?`<button onclick="clearItemMult('${pi.name.replace(/'/g,"\\'")}',this)" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:0" title="Reset to projection">✕</button>`:''}
           </div>
         </td>
         <td style="text-align:right;font-weight:700;font-size:15px;color:var(--info)">${final}</td>
       </tr>`;
 
       if(showDailyBreakdown){
-        s+=`<tr><td colspan="4" style="padding:0 0 8px 16px">
+        s+=`<tr><td colspan="6" style="padding:0 0 8px 16px">
           <table style="font-size:11px;color:var(--text2);border-collapse:collapse;width:100%">
             <tr><th style="text-align:left;padding:2px 6px;font-weight:500">Day</th>
               ${LOCS.map(l=>`<th style="text-align:right;padding:2px 6px;font-weight:500">${LOC_LABEL[l]}</th>`).join('')}
@@ -1484,7 +1552,7 @@ async function generate(debugMode=false){
     const tues=getLastNWeekdays(2,1)[0]; // last Tuesday
     const end=new Date(tues); end.setDate(end.getDate()+1);
     try{
-      const orders=await fetchOrders(locRed,tues.toISOString(),end.toISOString());
+      const orders=await fetchOrders(locRed,pacificMidnightISO(tues),pacificMidnightISO(end));
       const{counts}=aggregateOrders(orders);
       const lines=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([n,q])=>`${q.toString().padStart(4)}  ${n}`);
       document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME\n'+'─'.repeat(60)+'\n'+lines.join('\n'):'No orders found.';
