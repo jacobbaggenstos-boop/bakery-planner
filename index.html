@@ -1100,11 +1100,19 @@ function getLastNWeekdays(dayOfWeek, n) {
   const dates = [];
   const today = new Date();
   today.setHours(0,0,0,0);
-  let d = new Date(today);
-  d.setDate(d.getDate() - 1); // start from yesterday
+
+  // Find the start of the current week (most recent Tuesday = week start for this bakery)
+  // Skip any dates from the current week so we only sample complete weeks.
+  const currentWeekStart = new Date(today);
+  while(currentWeekStart.getDay() !== 2) currentWeekStart.setDate(currentWeekStart.getDate()-1);
+  // currentWeekStart is now the most recent Tuesday (could be today if today is Tue)
+
+  let d = new Date(currentWeekStart);
+  d.setDate(d.getDate()-1); // start searching from the day before this week began
+
   while(dates.length < n) {
     if(d.getDay() === dayOfWeek) dates.push(new Date(d));
-    d.setDate(d.getDate() - 1);
+    d.setDate(d.getDate()-1);
   }
   return dates; // most recent first
 }
@@ -1118,28 +1126,33 @@ function smartPairAverage(values) {
 }
 
 // Returns the indices [i, j] of the pair to average, or null if < 2 values.
-// Strategy: default to the two most recent weeks (indices 0 and 1, since
-// getLastNWeekdays returns most-recent-first). Only deviate if one week is
-// an outlier — more than 20% away from the mean of the other two — in which
-// case drop that outlier and use the other two instead.
-// This means recent trends are respected by default.
+// Rule:
+//   1. Default to the two most recent weeks (indices 0 and 1).
+//   2. If those two are more than 20% apart from each other, find the closest
+//      pair across all three weeks and use that instead.
+// "Most recent first" is guaranteed by getLastNWeekdays return order.
 function smartPairIndices(values) {
   if(values.length === 0) return null;
   if(values.length < 2) return null;
-  if(values.length === 2) return [0, 1]; // only two weeks, use both
+  if(values.length === 2) return [0, 1];
 
-  // With 3 weeks: check if any single week is an outlier vs the mean of the other two
   const OUTLIER_THRESH = 0.20;
-  for(const drop of [0, 1, 2]){
-    const others = [0,1,2].filter(i=>i!==drop);
-    const otherMean = (values[others[0]]+values[others[1]])/2;
-    if(otherMean > 0 && Math.abs(values[drop]-otherMean)/otherMean > OUTLIER_THRESH){
-      // This week is an outlier — use the other two
-      return [others[0], others[1]];
-    }
+  const pairDiff = (i, j) => {
+    const avg = (values[i]+values[j])/2;
+    return avg === 0 ? 0 : Math.abs(values[i]-values[j])/avg;
+  };
+
+  // Step 1: are the two most recent weeks close enough?
+  if(pairDiff(0, 1) <= OUTLIER_THRESH) return [0, 1];
+
+  // Step 2: they're too far apart — find the closest pair across all three
+  const pairs = [[0,1],[0,2],[1,2]];
+  let bestPair = [0,1], bestDiff = Infinity;
+  for(const [i,j] of pairs){
+    const diff = pairDiff(i,j);
+    if(diff < bestDiff){ bestDiff=diff; bestPair=[i,j]; }
   }
-  // No outliers — use the two most recent weeks (indices 0 and 1)
-  return [0, 1];
+  return bestPair;
 }
 
 async function fetchData() {
