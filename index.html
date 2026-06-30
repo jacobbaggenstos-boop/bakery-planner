@@ -123,9 +123,52 @@ input[type=range]{accent-color:var(--text)}
     <button class="tab" onclick="showTab('recipes',this)">Relationships</button>
     <button class="tab" onclick="showTab('oos',this)">Out of stock</button>
     <button class="tab" onclick="showTab('generate',this)">Generate</button>
+    <button class="tab" onclick="showTab('verify',this)">Verify</button>
     <button class="tab" onclick="showTab('setup',this)">Setup</button>
   </div>
   <div class="content">
+
+    <!-- VERIFY -->
+    <div id="tab-verify" class="panel">
+      <div class="card">
+        <div class="card-title">Raw data verification <span class="badge binfo">cross-reference with Square reports</span></div>
+        <div class="hint">Browse the exact unit counts the tool pulled from Square for each day/week/location. Fetch data on the Generate tab first. Use this to spot-check against Square's item sales report.</div>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+          <div class="fg" style="max-width:160px">
+            <label>Day of week</label>
+            <select id="verify-dow" onchange="renderVerifyTable()">
+              <option value="0">Tuesday</option>
+              <option value="1">Wednesday</option>
+              <option value="2">Thursday</option>
+              <option value="3">Friday</option>
+              <option value="4">Saturday</option>
+              <option value="5">Sunday</option>
+              <option value="6">Monday</option>
+            </select>
+          </div>
+          <div class="fg" style="max-width:160px">
+            <label>Week sample</label>
+            <select id="verify-week" onchange="renderVerifyTable()">
+              <option value="0">Most recent</option>
+              <option value="1">2nd most recent</option>
+              <option value="2">3rd most recent</option>
+            </select>
+          </div>
+          <div class="fg" style="max-width:160px">
+            <label>Sort by</label>
+            <select id="verify-sort" onchange="renderVerifyTable()">
+              <option value="total">Total (high→low)</option>
+              <option value="name">Name (A→Z)</option>
+              <option value="red">Redmond</option>
+              <option value="bel">Bellevue</option>
+              <option value="wood">Woodinville</option>
+            </select>
+          </div>
+        </div>
+        <div id="verify-date-label" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>
+        <div id="verify-table"></div>
+      </div>
+    </div>
 
     <!-- SETUP -->
     <div id="tab-setup" class="panel">
@@ -287,6 +330,17 @@ input[type=range]{accent-color:var(--text)}
         </div>
 
         <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div>
+              <div class="card-title" style="margin-bottom:2px">Day &amp; location adjustments <span class="badge binfo">optional</span></div>
+              <div class="hint" style="margin:0">Apply a % boost or reduction to a specific day and/or location — e.g. +20% Redmond on Friday for a local event, or −10% all locations on Monday.</div>
+            </div>
+            <button class="btn btnsm" onclick="addDayLocAdj()">+ Add</button>
+          </div>
+          <div id="day-loc-adj-list"></div>
+        </div>
+
+        <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
             <div>
               <div class="card-title" style="margin-bottom:2px">Step 3 — Review &amp; adjust <span id="weeks-used-label" class="badge binfo" style="margin-left:4px"></span></div>
@@ -348,6 +402,9 @@ let oosAdjustmentTotals = {}; // itemName -> units added by OOS adjustment (most
 let oosMissedSalesDetail = {}; // 'Day|Loc' -> { itemName: estimatedMissedUnits } (most recent week, for OOS tab)
 let rawBaselineData = {}; // same as baselineData but WITHOUT OOS additions — for the historical avg column
 let oosEnabled = true; // toggle for Step 3 — whether OOS adjustments are included in final numbers
+let dayLocAdjs = []; // [{day:'Friday', loc:'Red'|'all', pct:20, dir:'increase'|'drop'}]
+let salesByDowGlobal = {}; // persisted copy of salesByDow for the Verify tab
+let salesByDowDates = {}; // dow -> [date strings] for display in Verify tab
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red';
 let orderQtys = {};
@@ -446,6 +503,7 @@ function applyConfig(){
   document.getElementById('close-time').value = cfg.close_time;
   renderProdItems(); renderRels(); renderCatalogGrid();
   renderOosDays(); renderOosLocs(); renderAutoOosList(); renderOosList();
+  renderDayLocAdjs();
   updateRelProdSelect();
   if(cfg.catalog.length) document.getElementById('catalog-count').textContent = cfg.catalog.length+' items';
   // Set default week start
@@ -1406,6 +1464,17 @@ async function fetchData() {
   const oosEventCount = Object.values(autoOosData).reduce((n,d)=>n+Object.keys(d).length,0);
   const oosNote = oosEventCount ? ` · ${oosEventCount} OOS event${oosEventCount!==1?'s':''} auto-detected` : ' · No OOS events found (catalog sync required for auto-detection)';
   setStatus('gen-status','Data fetched.'+oosNote,'ok');
+
+  // Persist salesByDow for the Verify tab
+  salesByDowGlobal = salesByDow;
+  salesByDowDates = {};
+  const dowNames2=['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
+  for(let dow=0; dow<7; dow++){
+    const dowIndex=[2,3,4,5,6,0,1][dow];
+    const dates=getLastNWeekdays(dowIndex, WEEKS_TO_TRY);
+    salesByDowDates[dow] = dates.map(d=>d.toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}));
+  }
+  renderVerifyTable();
   renderAutoOosList();
   renderBaselineTable();
   document.getElementById('proj-direction').value = '';
@@ -1452,7 +1521,132 @@ function getFinalQty(itemName, day, loc){
   const projMult = getProjectionMultiplier();
   const itemOverride = cfg.item_multipliers[itemName];
   const effectiveMult = itemOverride !== undefined ? itemOverride/100 : projMult;
-  return Math.ceil(base * effectiveMult);
+  // Apply day/loc adjustments on top
+  let dayLocMult = 1;
+  for(const adj of dayLocAdjs){
+    const dayMatch = adj.day==='all' || adj.day===day;
+    const locMatch = adj.loc==='all' || adj.loc===loc;
+    if(dayMatch && locMatch){
+      dayLocMult *= adj.dir==='increase' ? (100+adj.pct)/100 : (100-adj.pct)/100;
+    }
+  }
+  return Math.ceil(base * effectiveMult * dayLocMult);
+}
+
+// ── DAY/LOC ADJUSTMENTS ───────────────────────────────────
+function addDayLocAdj(){
+  dayLocAdjs.push({day:'all', loc:'all', pct:10, dir:'increase'});
+  renderDayLocAdjs();
+  renderBaselineTable();
+}
+
+function removeDayLocAdj(i){
+  dayLocAdjs.splice(i,1);
+  renderDayLocAdjs();
+  renderBaselineTable();
+}
+
+function updateDayLocAdj(i, field, val){
+  dayLocAdjs[i][field] = field==='pct' ? parseInt(val)||0 : val;
+  renderBaselineTable();
+}
+
+function renderDayLocAdjs(){
+  const el=document.getElementById('day-loc-adj-list');
+  if(!dayLocAdjs.length){
+    el.innerHTML='<p class="empty" style="text-align:left;padding:8px 0">No adjustments added. Click "+ Add" to create one.</p>';
+    return;
+  }
+  const dayOpts=['all','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
+  const locOpts=[{v:'all',l:'All locations'},{v:'Red',l:'Redmond'},{v:'Bel',l:'Bellevue'},{v:'Wood',l:'Woodinville'}];
+  el.innerHTML=dayLocAdjs.map((adj,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);flex-wrap:wrap">
+      <select style="font-size:13px" onchange="updateDayLocAdj(${i},'day',this.value)">
+        ${dayOpts.map(d=>`<option value="${d}" ${adj.day===d?'selected':''}>${d==='all'?'Every day':d}</option>`).join('')}
+      </select>
+      <select style="font-size:13px" onchange="updateDayLocAdj(${i},'loc',this.value)">
+        ${locOpts.map(o=>`<option value="${o.v}" ${adj.loc===o.v?'selected':''}>${o.l}</option>`).join('')}
+      </select>
+      <select style="font-size:13px" onchange="updateDayLocAdj(${i},'dir',this.value)">
+        <option value="increase" ${adj.dir==='increase'?'selected':''}>increase by</option>
+        <option value="drop" ${adj.dir==='drop'?'selected':''}>drop by</option>
+      </select>
+      <input type="number" value="${adj.pct}" min="1" max="200" step="5" style="width:65px;font-size:13px;text-align:right"
+        oninput="updateDayLocAdj(${i},'pct',this.value)"/>
+      <span style="font-size:13px;color:var(--text2)">%</span>
+      <button class="btn btnsm" onclick="removeDayLocAdj(${i})">✕</button>
+    </div>`).join('');
+}
+
+// ── VERIFY TAB ────────────────────────────────────────────
+function renderVerifyTable(){
+  const el=document.getElementById('verify-table');
+  const labelEl=document.getElementById('verify-date-label');
+  if(!el) return;
+  const dow=parseInt(document.getElementById('verify-dow')?.value||0);
+  const wIdx=parseInt(document.getElementById('verify-week')?.value||0);
+  const sortBy=document.getElementById('verify-sort')?.value||'total';
+
+  if(!salesByDowGlobal[dow]?.[wIdx]){
+    el.innerHTML='<p class="empty">No data — fetch data on the Generate tab first.</p>';
+    if(labelEl) labelEl.textContent='';
+    return;
+  }
+
+  const dateStr=salesByDowDates[dow]?.[wIdx]||'';
+  if(labelEl) labelEl.textContent=dateStr ? `Showing data for ${['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'][dow]} ${dateStr}` : '';
+
+  const weekData=salesByDowGlobal[dow][wIdx];
+  // Collect all item names across all locations
+  const allItems=new Set();
+  for(const loc of LOCS) for(const name of Object.keys(weekData[loc]?.counts||{})) allItems.add(name);
+
+  // Build rows
+  let rows=[];
+  for(const name of allItems){
+    const red=weekData['Red']?.counts?.[name]||0;
+    const bel=weekData['Bel']?.counts?.[name]||0;
+    const wood=weekData['Wood']?.counts?.[name]||0;
+    const total=red+bel+wood;
+    rows.push({name,red,bel,wood,total});
+  }
+
+  // Sort
+  if(sortBy==='total') rows.sort((a,b)=>b.total-a.total);
+  else if(sortBy==='name') rows.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sortBy==='red') rows.sort((a,b)=>b.red-a.red);
+  else if(sortBy==='bel') rows.sort((a,b)=>b.bel-a.bel);
+  else if(sortBy==='wood') rows.sort((a,b)=>b.wood-a.wood);
+
+  // Highlight production items
+  const prodNames=new Set(cfg.prod_items.map(p=>p.name));
+  const relMenuNames=new Set(cfg.rels.map(r=>r.menu));
+
+  let html=`<table class="tbl"><thead><tr>
+    <th>Square item name</th>
+    <th style="text-align:right">Redmond</th>
+    <th style="text-align:right">Bellevue</th>
+    <th style="text-align:right">Woodinville</th>
+    <th style="text-align:right;font-weight:700">Total</th>
+    <th>Maps to</th>
+  </tr></thead><tbody>`;
+
+  for(const row of rows){
+    const mappedProds=[...new Set(cfg.rels.filter(r=>nameMatches(row.name,r.menu)).map(r=>r.prod))];
+    const isDirectProd=prodNames.has(row.name);
+    const mapsTo=mappedProds.length ? mappedProds.join(', ') : (isDirectProd ? row.name : '—');
+    const rowStyle=mappedProds.length||isDirectProd ? '' : 'color:var(--text3)';
+    html+=`<tr style="${rowStyle}">
+      <td>${row.name}</td>
+      <td style="text-align:right">${row.red||'—'}</td>
+      <td style="text-align:right">${row.bel||'—'}</td>
+      <td style="text-align:right">${row.wood||'—'}</td>
+      <td style="text-align:right;font-weight:600">${row.total||'—'}</td>
+      <td style="font-size:12px;color:var(--text2)">${mapsTo}</td>
+    </tr>`;
+  }
+  html+='</tbody></table>';
+  el.innerHTML=html;
 }
 
 function getItemWeeklyTotal(itemName){
