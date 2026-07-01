@@ -570,6 +570,7 @@ async function syncCatalog(){
 }
 
 // ── REWRITTEN FETCH DATA VIA REPORTING API ────────────────
+// ── OPTIMIZED PARALLEL FETCH DATA VIA REPORTING API ────────────────
 async function fetchData() {
   const tok = token();
   if (!tok) {
@@ -586,140 +587,135 @@ async function fetchData() {
     return;
   }
 
-  setStatus('gen-status', '<span class="spin"></span> Querying Square Reporting API...', 'info');
+  setStatus('gen-status', '<span class="spin"></span> Querying Square Reporting API in parallel chunks...', 'info');
   document.getElementById('fetch-btn').disabled = true;
 
-  const weekDates = [];
+  const locationIds = [locRed, locBel, locWood].filter(Boolean);
   const today = new Date();
-  
+
+  // Reset global structures
+  salesByDowGlobal = {};
+  salesByDowDates = {};
+  for (let dow = 0; dow < 7; dow++) {
+    salesByDowGlobal[dow] = Array.from({ length: 3 }, () => ({ Red: { counts: {} }, Bel: { counts: {} }, Wood: { counts: {} } }));
+  }
+
+  // Define 3 separate, distinct week ranges to avoid hitting serverless/Val Town limits
+  const weekRanges = [];
   for (let weekOffset = 1; weekOffset <= 3; weekOffset++) {
+    const datesInWeek = [];
     for (let dow = 0; dow < 7; dow++) {
       const d = new Date(today);
       const currentDayOfWeek = today.getDay();
       const diff = currentDayOfWeek === 2 ? 7 : (currentDayOfWeek < 2 ? currentDayOfWeek + 5 : currentDayOfWeek - 2);
       d.setDate(today.getDate() - diff - (weekOffset * 7) + dow);
-      weekDates.push(d.toISOString().split('T')[0]);
+      datesInWeek.push(d.toISOString().split('T')[0]);
     }
+    datesInWeek.sort();
+    weekRanges.push({
+      slot: weekOffset - 1,
+      start: datesInWeek[0],
+      end: datesInWeek[datesInWeek.length - 1],
+      allDates: datesInWeek
+    });
   }
 
-  const allDates = [...new Set(weekDates)].sort();
-  const startDate = allDates[0];
-  const endDate = allDates[allDates.length - 1];
-  const locationIds = [locRed, locBel, locWood].filter(Boolean);
-
   try {
-    let reportingData = null;
-    let isProcessing = true;
-    let attempts = 0;
+    // Fire all three separate week requests simultaneously!
+    const fetchPromises = weekRanges.map(async (range) => {
+      let isProcessing = true;
+      let attempts = 0;
+      let weekData = null;
 
-    const payload = {
-      query: {
-        measures: ["ItemSales.quantity_sold"],
-        dimensions: [
-          "ItemSales.item_name",
-          "ItemSales.item_variation_name",
-          "ItemSales.location_id",
-          "ItemSales.local_reporting_date"
-        ],
-        filters: [
-          {
-            dimension: "ItemSales.location_id",
-            operator: "IN",
-            values: locationIds
-          },
-          {
+      const payload = {
+        query: {
+          measures: ["ItemSales.quantity_sold"],
+          dimensions: [
+            "ItemSales.item_name",
+            "ItemSales.item_variation_name",
+            "ItemSales.location_id",
+            "ItemSales.local_reporting_date"
+          ],
+          filters: [
+            { dimension: "ItemSales.location_id", operator: "IN", values: locationIds },
+            { dimension: "ItemSales.local_reporting_date", operator: "BETWEEN", values: [range.start, range.end] }
+          ],
+          timeDimensions: [{
             dimension: "ItemSales.local_reporting_date",
-            operator: "BETWEEN",
-            values: [startDate, endDate]
-          }
-        ],
-        timeDimensions: [{
-          dimension: "ItemSales.local_reporting_date",
-          dateRange: [startDate, endDate]
-        }]
-      }
-    };
-
-    while (isProcessing && attempts < 15) {
-      attempts++;
-      const response = await fetch(sqUrl('/reporting/v1/load'), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${tok}`,
-          'Content-Type': 'application/json',
-          'Square-Version': SQ_VER
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const resJson = await response.json();
-
-      if (resJson.errors) {
-        throw new Error(resJson.errors[0].detail);
-      }
-
-      if (resJson.error === "Continue wait" || resJson.status === "PROCESSING" || (!resJson.data && !resJson.rows && !Array.isArray(resJson))) {
-        setStatus('gen-status', `<span class="spin"></span> Processing report data (Attempt ${attempts})...`, 'info');
-        await new Promise(resolve => setTimeout(resolve, 3000)); 
-      } else {
-        reportingData = resJson.data || resJson.rows || (Array.isArray(resJson) ? resJson : null);
-        if (!reportingData) {
-          throw new Error("Invalid structure returned from server.");
+            dateRange: [range.start, range.end]
+          }]
         }
-        isProcessing = false;
+      };
+
+      while (isProcessing && attempts < 30) {
+        attempts++;
+        const response = await fetch(sqUrl('/reporting/v1/load'), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${tok}`,
+            'Content-Type': 'application/json',
+            'Square-Version': SQ_VER
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const resJson = await response.json();
+        if (resJson.errors) throw new Error(resJson.errors[0].detail);
+
+        if (resJson.error === "Continue wait" || resJson.status === "PROCESSING" || (!resJson.data && !resJson.rows && !Array.isArray(resJson))) {
+          await new Promise(resolve => setTimeout(resolve, 2500)); 
+        } else {
+          weekData = resJson.data || resJson.rows || (Array.isArray(resJson) ? resJson : null);
+          isProcessing = false;
+        }
       }
-    }
-
-    if (!reportingData) {
-      throw new Error("Reporting API timed out processing this timeframe.");
-    }
-
-    salesByDowGlobal = {};
-    salesByDowDates = {};
-    
-    for (let dow = 0; dow < 7; dow++) {
-      salesByDowGlobal[dow] = Array.from({ length: 3 }, () => ({ Red: { counts: {} }, Bel: { counts: {} }, Wood: { counts: {} } }));
-    }
-
-    reportingData.forEach(row => {
-      const itemName = row["ItemSales.item_name"] || row[0];
-      const variationName = row["ItemSales.item_variation_name"] || row[1];
-      const rowLocId = row["ItemSales.location_id"] || row[2];
-      const rowDate = row["ItemSales.local_reporting_date"] || row[3];
-      const qtySold = parseInt(row["ItemSales.quantity_sold"] || row[4], 10) || 0;
-
-      const fullName = variationName && variationName.toLowerCase() !== 'regular' 
-        ? `${itemName} — ${variationName}` 
-        : itemName;
-
-      let locKey = '';
-      if (rowLocId === locRed) locKey = 'Red';
-      else if (rowLocId === locBel) locKey = 'Bel';
-      else if (rowLocId === locWood) locKey = 'Wood';
-      if (!locKey) return;
-
-      const dateObj = new Date(rowDate + 'T00:00:00');
-      const dowIndex = (dateObj.getDay() + 5) % 7; 
       
-      const targetIndex = weekDates.indexOf(rowDate);
-      if (targetIndex === -1) return;
-      const weekSlot = Math.floor(targetIndex / 7);
+      if (!weekData) throw new Error(`Timeout parsing week chunk range: ${range.start} to ${range.end}`);
+      return { slot: range.slot, data: weekData, allDates: range.allDates };
+    });
 
-      if (!salesByDowDates[dowIndex]) salesByDowDates[dowIndex] = [];
-      salesByDowDates[dowIndex][weekSlot] = rowDate;
+    // Wait for all 3 threads to safely respond 
+    const completedWeeks = await Promise.all(fetchPromises);
 
-      const countsRef = salesByDowGlobal[dowIndex][weekSlot][locKey].counts;
-      countsRef[fullName] = (countsRef[fullName] || 0) + qtySold;
+    // Map the combined chunk data back to our layout matrix
+    completedWeeks.forEach(weekResult => {
+      const weekSlot = weekResult.slot;
+      
+      weekResult.data.forEach(row => {
+        const itemName = row["ItemSales.item_name"] || row[0];
+        const variationName = row["ItemSales.item_variation_name"] || row[1];
+        const rowLocId = row["ItemSales.location_id"] || row[2];
+        const rowDate = row["ItemSales.local_reporting_date"] || row[3];
+        const qtySold = parseInt(row["ItemSales.quantity_sold"] || row[4], 10) || 0;
+
+        const fullName = variationName && variationName.toLowerCase() !== 'regular' 
+          ? `${itemName} — ${variationName}` 
+          : itemName;
+
+        let locKey = '';
+        if (rowLocId === locRed) locKey = 'Red';
+        else if (rowLocId === locBel) locKey = 'Bel';
+        else if (rowLocId === locWood) locKey = 'Wood';
+        if (!locKey) return;
+
+        const dateObj = new Date(rowDate + 'T00:00:00');
+        const dowIndex = (dateObj.getDay() + 5) % 7; 
+
+        if (!salesByDowDates[dowIndex]) salesByDowDates[dowIndex] = [];
+        salesByDowDates[dowIndex][weekSlot] = rowDate;
+
+        const countsRef = salesByDowGlobal[dowIndex][weekSlot][locKey].counts;
+        countsRef[fullName] = (countsRef[fullName] || 0) + qtySold;
+      });
     });
 
     calculateBaselinesFromReporting();
 
   } catch (e) {
-    setStatus('gen-status', 'Reporting API Error: ' + e.message, 'err');
+    setStatus('gen-status', 'API/Proxy Limit Error: ' + e.message, 'err');
     document.getElementById('fetch-btn').disabled = false;
   }
 }
-
 // ── COMPUTE RE-MAPPED BASELINES ───────────────────────────
 function calculateBaselinesFromReporting() {
   setStatus('gen-status', '<span class="spin"></span> Calculating baseline averages...', 'info');
