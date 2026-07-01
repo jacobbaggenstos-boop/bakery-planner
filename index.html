@@ -953,7 +953,7 @@ function pacificMidnightISO(date){
 async function fetchOrders(locId,startISO,endISO){
   let orders=[],cursor=null;
   do{
-    const body={location_ids:[locId],query:{filter:{date_time_filter:{created_at:{start_at:startISO,end_at:endISO}},state_filter:{states:['COMPLETED']}}}};
+    const body={location_ids:[locId],query:{filter:{date_time_filter:{created_at:{start_at:startISO,end_at:endISO}}}}};
     if(cursor)body.cursor=cursor;
     const r=await fetch(sqUrl('/v2/orders/search'),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
     const d=await r.json();
