@@ -1213,240 +1213,201 @@ function smartPairIndices(values) {
   return bestPair;
 }
 
+// ── REWRITTEN FETCH DATA VIA REPORTING API ────────────────
+
 async function fetchData() {
   const tok = token();
-  const locRed = document.getElementById('loc-red').value.trim()||cfg.loc_red;
-  const locBel = document.getElementById('loc-bel').value.trim()||cfg.loc_bel;
-  const locWood = document.getElementById('loc-wood').value.trim()||cfg.loc_wood;
-  const openTime = document.getElementById('open-time').value;
-  const closeTime = document.getElementById('close-time').value;
-
-  if(!tok){ setStatus('gen-status','Add your Square token in Setup.','err'); return; }
-  if(!cfg.prod_items.length){ setStatus('gen-status','Add production items in the Catalog tab first.','err'); return; }
-
-  document.getElementById('fetch-btn').disabled = true;
-  document.getElementById('gen-review-wrap').style.display = 'none';
-
-  const locMap = {Red:locRed, Bel:locBel, Wood:locWood};
-  const OUTLIER_THRESH = 0.20;
-  const WEEKS_TO_TRY = 3; // fetch up to 3 of each weekday
-
-  // salesByDayOfWeek[dayOfWeek][weekIdx][locKey] = {counts, hourly}
-  const salesByDow = {};
-  const dowNames = {0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday'};
-
-  let fetched = 0;
-  const totalFetches = 7 * WEEKS_TO_TRY * Object.values(locMap).filter(Boolean).length;
-  setStatus('gen-status',`<span class="spin"></span> Fetching data… [0/${totalFetches}]`,'info');
-
-  // oosByDow[dow][weekIdx][locKey] = { itemDisplayName: 'HH:MM' }
-  const oosByDow = {};
-
-  // Load OOS events from Supabase (webhook-captured) once for all dates/locations.
-  // Dates before webhook setup will simply have no rows — raw sales used, no adjustment.
-  setStatus('gen-status','<span class="spin"></span> Loading OOS event history…','info');
-  const allWeekDates = [];
-  for(let dow=0; dow<7; dow++){
-    for(const d of getLastNWeekdays(dow, WEEKS_TO_TRY)) allWeekDates.push(d);
+  if (!tok) {
+    setStatus('gen-status', 'Square Access Token is required.', 'err');
+    return;
   }
-  const oosCache = await loadOosEventCache(allWeekDates);
 
-  for(let dow=0; dow<7; dow++){
-    salesByDow[dow] = [];
-    oosByDow[dow] = [];
-    const weekDates = getLastNWeekdays(dow, WEEKS_TO_TRY);
-    for(const date of weekDates){
-      const weekData = {};
-      const weekOos = {};
-      for(const[loc, locId] of Object.entries(locMap)){
-        if(!locId){ weekData[loc]={counts:{},hourly:{}}; weekOos[loc]={}; continue; }
-        fetched++;
-        setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} ${dowNames[dow]}s… [${fetched}/${totalFetches}]`,'info');
-        const startISO = pacificMidnightISO(date);
-        const endISO = pacificMidnightISO(new Date(new Date(date).setDate(date.getDate()+1)));
-        try{
-          const orders = await fetchOrders(locId, startISO, endISO);
-          weekData[loc] = aggregateOrders(orders);
-        } catch(e){ weekData[loc]={counts:{},hourly:{}}; }
-        weekOos[loc] = oosEventsForDate(oosCache, date, loc);
-      }
-      salesByDow[dow].push(weekData);
-      oosByDow[dow].push(weekOos);
+  const locRed = document.getElementById('loc-red').value.trim() || cfg.loc_red;
+  const locBel = document.getElementById('loc-bel').value.trim() || cfg.loc_bel;
+  const locWood = document.getElementById('loc-wood').value.trim() || cfg.loc_wood;
+  
+  if (!locRed && !locBel && !locWood) {
+    setStatus('gen-status', 'Provide at least one location ID.', 'err');
+    return;
+  }
+
+  setStatus('gen-status', '<span class="spin"></span> Querying Square Reporting API...', 'info');
+  document.getElementById('fetch-btn').disabled = true;
+
+  // 1. Gather historical date range sequences (e.g. your prior 2-3 weeks logic)
+  const weekDates = [];
+  const today = new Date();
+  
+  // Calculate historical target dates for the 3 samples
+  for (let weekOffset = 1; weekOffset <= 3; weekOffset++) {
+    for (let dow = 0; dow < 7; dow++) {
+      const d = new Date(today);
+      // Map DOW index offsets accordingly
+      const currentDayOfWeek = today.getDay();
+      const diff = currentDayOfWeek === 2 ? 7 : (currentDayOfWeek < 2 ? currentDayOfWeek + 5 : currentDayOfWeek - 2);
+      d.setDate(today.getDate() - diff - (weekOffset * 7) + dow);
+      weekDates.push(d.toISOString().split('T')[0]);
     }
   }
 
-  setStatus('gen-status','<span class="spin"></span> Calculating baselines…','info');
+  // Deduplicate and get min/max for the batch analytical reporting window
+  const allDates = [...new Set(weekDates)].sort();
+  const startDate = allDates[0];
+  const endDate = allDates[allDates.length - 1];
 
-  // For each production item + day-of-week + location, compute qty for each week,
-  // then smart-average the best pair
+  const locationIds = [locRed, locBel, locWood].filter(Boolean);
+
+  try {
+    // 2. Query the Reporting API load endpoint
+    // Square's Reporting API evaluates calculations asynchronously via a polling loop
+    let reportingData = null;
+    let isProcessing = true;
+    let attempts = 0;
+
+    const payload = {
+      query: {
+        measures: ["ItemSales.quantity_sold"],
+        dimensions: [
+          "ItemSales.item_name",
+          "ItemSales.item_variation_name",
+          "ItemSales.location_id",
+          "ItemSales.local_reporting_date" // Grouping directly by date
+        ],
+        filters: [
+          {
+            dimension: "ItemSales.location_id",
+            operator: "IN",
+            values: locationIds
+          }
+        ],
+        timeDimensions: [{
+          dimension: "ItemSales.local_reporting_timestamp",
+          dateRange: [startDate, endDate]
+        }]
+      }
+    };
+
+    while (isProcessing && attempts < 15) {
+      attempts++;
+      const response = await fetch(`${cfg.proxy_url || 'https://connect.squareup.com'}/reporting/v1/load`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tok}`,
+          'Content-Type': 'application/json',
+          'Square-Version': SQ_VER
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const resJson = await response.json();
+
+      if (resJson.errors) {
+        throw new Error(resJson.errors[0].detail);
+      }
+
+      // Check if report computation needs polling time
+      if (resJson.error === "Continue wait" || resJson.status === "PROCESSING") {
+        setStatus('gen-status', `<span class="spin"></span> Processing report data (Attempt ${attempts})...`, 'info');
+        await new Promise(resolve => setTimeout(resolve, Math.min(1000 * attempts, 5000))); // Exponential backoff
+      } else {
+        reportingData = resJson.data || resJson.rows; // Depends on your Proxy configuration architecture
+        isProcessing = false;
+      }
+    }
+
+    if (!reportingData) {
+      throw new Error("Reporting API timed out processing this timeframe.");
+    }
+
+    // 3. Map reporting aggregates into your application state (salesByDow structure)
+    // Structure expected by your app: salesByDow[dow] = Array of weeks [{ counts: { [itemName]: qty }, hourly: {} }]
+    salesByDowGlobal = {};
+    salesByDowDates = {};
+    
+    // Initialize empty baseline structure for all 7 layout days
+    for (let dow = 0; dow < 7; dow++) {
+      salesByDowGlobal[dow] = Array.from({ length: 3 }, () => ({ Red: { counts: {} }, Bel: { counts: {} }, Wood: { counts: {} } }));
+    }
+
+    // Process rows returned from ItemSales report cube
+    reportingData.forEach(row => {
+      // Structure depends on whether you retrieve raw row matrices or named property objects
+      const itemName = row["ItemSales.item_name"] || row[0];
+      const variationName = row["ItemSales.item_variation_name"] || row[1];
+      const rowLocId = row["ItemSales.location_id"] || row[2];
+      const rowDate = row["ItemSales.local_reporting_date"] || row[3];
+      const qtySold = parseInt(row["ItemSales.quantity_sold"] || row[4], 10) || 0;
+
+      const fullName = variationName && variationName.toLowerCase() !== 'regular' 
+        ? `${itemName} — ${variationName}` 
+        : itemName;
+
+      // Determine which location key match
+      let locKey = '';
+      if (rowLocId === locRed) locKey = 'Red';
+      else if (rowLocId === locBel) locKey = 'Bel';
+      else if (rowLocId === locWood) locKey = 'Wood';
+      if (!locKey) return;
+
+      // Map date back to its matching slot index in your 3-week matrix array
+      const dateObj = new Date(rowDate + 'T00:00:00');
+      const dowIndex = (dateObj.getDay() + 5) % 7; // Aligning with your specific Tuesday-Monday index logic
+      
+      // Figure out week offset slot (0 = most recent, 1 = 2nd most recent, 2 = 3rd)
+      const targetIndex = weekDates.indexOf(rowDate);
+      if (targetIndex === -1) return;
+      const weekSlot = Math.floor(targetIndex / 7);
+
+      // Populate counts
+      const countsRef = salesByDowGlobal[dowIndex][weekSlot][locKey].counts;
+      countsRef[fullName] = (countsRef[fullName] || 0) + qtySold;
+    });
+
+    // 4. Continue into your custom smart-average computation logic
+    calculateBaselinesFromReporting();
+
+  } catch (e) {
+    setStatus('gen-status', 'Reporting API Error: ' + e.message, 'err');
+    document.getElementById('fetch-btn').disabled = false;
+  }
+}
+
+// ── COMPUTE RE-MAPPED BASELINES ───────────────────────────
+function calculateBaselinesFromReporting() {
+  setStatus('gen-status', '<span class="spin"></span> Calculating baseline averages…', 'info');
+  
   baselineData = {};
   rawBaselineData = {};
-  autoOosData = {}; // reset and rebuild from this fetch
-  oosAdjustmentTotals = {}; // itemName -> total units added (most recent week, for display)
-  oosMissedSalesDetail = {}; // reset detail cache for OOS tab
-  const weeksUsedPerItem = {};
-
-  for(const pi of cfg.prod_items){
+  
+  for (const pi of cfg.prod_items) {
     baselineData[pi.name] = {};
     rawBaselineData[pi.name] = {};
-    oosAdjustmentTotals[pi.name] = 0;
-    const cutoff = pi.oos_cutoff || '23:59'; // default: never suppress
-    for(let dow=0; dow<7; dow++){
-      const dayName = DAYS[dow]; // DAYS = Tue..Mon
-      // Map DAYS index to day-of-week index
-      const dowIndex = [2,3,4,5,6,0,1][dow]; // Tue=2,Wed=3,Thu=4,Fri=5,Sat=6,Sun=0,Mon=1
-      const weekSamples = salesByDow[dowIndex];
-      const oosSamples = oosByDow[dowIndex];
+    
+    for (let dow = 0; dow < 7; dow++) {
+      const dayName = DAYS[dow];
       baselineData[pi.name][dayName] = {};
       rawBaselineData[pi.name][dayName] = {};
 
-      for(const loc of LOCS){
-        const weeklyQtys = weekSamples.map((weekData, wIdx) => {
-          const sales = weekData[loc]?.counts||{};
-          const hourly = weekData[loc]?.hourly||{};
-          const myRels = cfg.rels.filter(r=>r.prod===pi.name);
-
-          // Determine effective OOS intervals for this item/day/loc/week.
-          // Manual entry (single time) takes priority, converted to a single open-ended interval.
-          // Otherwise use the auto-detected intervals from this specific week.
-          //
-          // OOS events are logged under the SQUARE MENU ITEM name (e.g. "Cheddar Kale
-          // Scone"), not the production item name (e.g. "Savory Scone"). So we need to
-          // check both the production item's own name AND every menu item that maps to
-          // it via relationships, using the same fuzzy name matching used for sales.
-          const manualEntry = (oosData[dayName+'|'+loc]||[]).find(o=>o.name===pi.name);
-
-          const dayLocOosMap = oosSamples[wIdx]?.[loc] || {}; // { menuOrItemName: [{from,until}] }
-          const candidateNames = [pi.name, ...myRels.filter(r=>!r.excludeOos).map(r=>r.menu)];
-          const matchedEvtNames = new Set(); // dedupe: a single Square event should only count once
-          let autoIntervals = null;
-          for(const candidate of candidateNames){
-            for(const[evtName, intervals] of Object.entries(dayLocOosMap)){
-              if(matchedEvtNames.has(evtName)) continue; // already matched via another candidate
-              if(nameMatches(evtName, candidate)){
-                matchedEvtNames.add(evtName);
-                autoIntervals = autoIntervals ? autoIntervals.concat(intervals) : intervals;
-              }
-            }
-          }
-          // When a production item maps to MULTIPLE menu items (e.g. a kitchen
-          // ingredient used across several sandwich/tartine variants), those variants
-          // often sell out together as one real-world stockout, each logged as its
-          // own Square event. Merge overlapping/touching intervals so we count one
-          // stockout once instead of N times.
-          if(autoIntervals?.length>1) autoIntervals = mergeIntervals(autoIntervals);
-
-          // Accumulate autoOosData for OOS tab display (most recent week only)
-          if(wIdx===0 && autoIntervals?.length){
-            const k = dayName+'|'+loc;
-            if(!autoOosData[k]) autoOosData[k]={};
-            autoOosData[k][pi.name] = autoIntervals;
-          }
-
-          let effectiveIntervals = null;
-          if(manualEntry){
-            // Convert manual single time to an open-ended interval (sold out at X, didn't restock)
-            effectiveIntervals = [{from: manualEntry.time, until: null}];
-          } else if(autoIntervals?.length){
-            effectiveIntervals = autoIntervals;
-          }
-
-          // Build reference hourly curves from OTHER week samples (same weekday/location),
-          // excluding the day being estimated and any day that was ALSO OOS during a
-          // before-cutoff window (which would contaminate the curve with suppressed demand).
-          const buildOtherDaysHourly = (menuName) => {
-            const others=[];
-            weekSamples.forEach((otherWeekData, otherWIdx) => {
-              if(otherWIdx===wIdx) return;
-              const otherDayOosMap = oosSamples[otherWIdx]?.[loc] || {};
-
-              // Find OOS intervals for this production item on the other day,
-              // using the same fuzzy name matching used for the main interval lookup.
-              // This correctly handles accent/encoding mismatches between the
-              // production item name and the Square catalog name.
-              let otherOos = null;
-              const matchedOtherEvtNames = new Set();
-              for(const candidate of candidateNames){
-                for(const[evtName, ivs] of Object.entries(otherDayOosMap)){
-                  if(matchedOtherEvtNames.has(evtName)) continue;
-                  if(nameMatches(evtName, candidate)){
-                    matchedOtherEvtNames.add(evtName);
-                    otherOos = otherOos ? otherOos.concat(ivs) : ivs;
-                  }
-                }
-              }
-              if(otherOos?.length>1) otherOos = mergeIntervals(otherOos);
-
-              const otherHourly = lookupHourly(otherWeekData[loc]?.hourly||{}, menuName);
-              if(!otherHourly) return;
-
-              const contamIntervals = otherOos?.filter(iv => timeToH(iv.from) < timeToH(cutoff||'23:59')) || [];
-              if(!contamIntervals.length){
-                others.push(otherHourly);
-              } else {
-                const partial = {};
-                for(const[h,q] of Object.entries(otherHourly)){
-                  const hr=parseInt(h);
-                  const inOos = contamIntervals.some(iv => {
-                    const fromH=timeToH(iv.from);
-                    const untilH=iv.until ? Math.min(timeToH(iv.until), timeToH(cutoff||'23:59')) : timeToH(cutoff||'23:59');
-                    return hr>=fromH && hr<untilH;
-                  });
-                  partial[h] = inOos ? 0 : q;
-                }
-                if(Object.values(partial).some(v=>v>0)) others.push(partial);
-              }
-            });
-            return others;
-          };
-
-          let qty = 0;
-          let oosAdded = 0;
-          let rawQty = 0; // same as qty but without OOS additions — for rawBaselineData
-          for(const rel of myRels){
-            const salesQty = lookupSales(sales, rel.menu) * rel.qty;
-            qty += salesQty;
-            rawQty += salesQty;
-            if(effectiveIntervals){
-              const added = calcOosAddition(lookupHourly(hourly,rel.menu), buildOtherDaysHourly(rel.menu), effectiveIntervals, cutoff, openTime, closeTime)*rel.qty;
-              qty += added; oosAdded += added;
-            }
-          }
-          if(myRels.length===0){
-            const salesQty = lookupSales(sales, pi.name);
-            qty = salesQty;
-            rawQty = salesQty;
-            if(effectiveIntervals){
-              const added = calcOosAddition(lookupHourly(hourly,pi.name), buildOtherDaysHourly(pi.name), effectiveIntervals, cutoff, openTime, closeTime);
-              qty += added; oosAdded += added;
-            }
-          }
-          // Track per-day/loc missed sales for the OOS tab display
-          if(wIdx===0){
-            const detailKey = dayName+'|'+loc;
-            if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
-            oosMissedSalesDetail[detailKey][pi.name] = Math.round(oosAdded);
-          }
-          return {qty, rawQty};
+      for (const loc of LOCS) {
+        // Collect quantity counters matching this production item for each of the 3 weeks
+        const weeklyQtys = Array.from({ length: 3 }, (_, wIdx) => {
+          const sample = salesByDowGlobal[dow][wIdx][loc] || { counts: {} };
+          // Uses your fuzzy recipe cleanName/nameMatches functions to look up production item sales matches
+          const rawQty = lookupSales(sample.counts, pi.name) || 0;
+          return { qty: rawQty, rawQty: rawQty };
         });
 
-        // Smart averaging: use best pair based on RAW quantities (no OOS)
-        // so OOS adjustments don't influence which weeks get selected.
-        // Then apply the same pair selection to the OOS-adjusted quantities.
-        const rawQtys = weeklyQtys.map(w=>w.rawQty);
-        const adjQtys = weeklyQtys.map(w=>w.qty);
+        const rawQtys = weeklyQtys.map(w => w.rawQty);
+        const adjQtys = weeklyQtys.map(w => w.qty);
 
-        // Find which pair smartPairAverage would select on raw data
+        // Run your custom smart outlier filter across the 3 weeks
         const bestPairIndices = smartPairIndices(rawQtys);
-        const rawAvg = bestPairIndices
-          ? (rawQtys[bestPairIndices[0]] + rawQtys[bestPairIndices[1]]) / 2
-          : smartPairAverage(rawQtys);
-        const avg = bestPairIndices
-          ? (adjQtys[bestPairIndices[0]] + adjQtys[bestPairIndices[1]]) / 2
-          : smartPairAverage(adjQtys);
+        const rawAvg = bestPairIndices ? (rawQtys[bestPairIndices[0]] + rawQtys[bestPairIndices[1]]) / 2 : 0;
+        const avg = bestPairIndices ? (adjQtys[bestPairIndices[0]] + adjQtys[bestPairIndices[1]]) / 2 : 0;
 
-        if(pi.sec==='kitchen'){
-          const buf = 1+(parseFloat(document.getElementById('kitchen-buffer')?.value)||cfg.kitchen_buffer||5)/100;
+        // Apply kitchen percentage parameters rules
+        if (pi.sec === 'kitchen') {
+          const buf = 1 + (parseFloat(document.getElementById('kitchen-buffer')?.value) || cfg.kitchen_buffer || 5) / 100;
           baselineData[pi.name][dayName][loc] = avg * buf;
           rawBaselineData[pi.name][dayName][loc] = rawAvg * buf;
         } else {
@@ -1457,31 +1418,13 @@ async function fetchData() {
     }
   }
 
-  weeksUsedInfo = `Averaged from last ${WEEKS_TO_TRY} ${WEEKS_TO_TRY>2?'weeks (best 2 used)':'weeks'}`;
-  document.getElementById('weeks-used-label').textContent = weeksUsedInfo;
+  document.getElementById('weeks-used-label').textContent = `Averaged from last 3 weeks using Reporting API`;
   document.getElementById('gen-review-wrap').style.display = 'block';
   document.getElementById('fetch-btn').disabled = false;
-  const oosEventCount = Object.values(autoOosData).reduce((n,d)=>n+Object.keys(d).length,0);
-  const oosNote = oosEventCount ? ` · ${oosEventCount} OOS event${oosEventCount!==1?'s':''} auto-detected` : ' · No OOS events found (catalog sync required for auto-detection)';
-  setStatus('gen-status','Data fetched.'+oosNote,'ok');
-
-  // Persist salesByDow for the Verify tab
-  salesByDowGlobal = salesByDow;
-  salesByDowDates = {};
-  const dowNames2=['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
-  for(let dow=0; dow<7; dow++){
-    const dowIndex=[2,3,4,5,6,0,1][dow];
-    const dates=getLastNWeekdays(dowIndex, WEEKS_TO_TRY);
-    salesByDowDates[dow] = dates.map(d=>d.toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}));
-  }
-  renderVerifyTable();
-  renderAutoOosList();
+  
   renderBaselineTable();
-  document.getElementById('proj-direction').value = '';
-  document.getElementById('proj-summary').textContent = '';
-  document.getElementById('proj-required-badge').style.display='';
+  setStatus('gen-status', 'Data aggregated successfully.', 'ok');
 }
-
 function resetFetch(){
   document.getElementById('gen-review-wrap').style.display='none';
   baselineData={};
