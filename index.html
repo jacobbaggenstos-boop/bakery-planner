@@ -119,16 +119,15 @@ input[type=range]{accent-color:var(--text)}
     </div>
   </header>
   <div class="tabs">
-    <button class="tab active" onclick="showTab('catalog',this)">Catalog</button>
+    <button class="tab" onclick="showTab('catalog',this)">Catalog</button>
     <button class="tab" onclick="showTab('recipes',this)">Relationships</button>
     <button class="tab" onclick="showTab('oos',this)">Out of stock</button>
-    <button class="tab" onclick="showTab('generate',this)">Generate</button>
+    <button class="tab active" onclick="showTab('generate',this)">Generate</button>
     <button class="tab" onclick="showTab('verify',this)">Verify</button>
     <button class="tab" onclick="showTab('setup',this)">Setup</button>
   </div>
   <div class="content">
 
-    <!-- VERIFY -->
     <div id="tab-verify" class="panel">
       <div class="card">
         <div class="card-title">Raw data verification <span class="badge binfo">cross-reference with Square reports</span></div>
@@ -170,7 +169,6 @@ input[type=range]{accent-color:var(--text)}
       </div>
     </div>
 
-    <!-- SETUP -->
     <div id="tab-setup" class="panel">
       <div class="card">
         <div class="card-title">Square connection <span class="badge bwarn">stored in shared config</span></div>
@@ -198,8 +196,7 @@ input[type=range]{accent-color:var(--text)}
       </div>
     </div>
 
-    <!-- CATALOG -->
-    <div id="tab-catalog" class="panel active">
+    <div id="tab-catalog" class="panel">
       <div class="card">
         <div class="card-title">Square catalog sync</div>
         <div class="hint">Sync pulls your live menu items from Square. Results are shared with your team automatically.</div>
@@ -223,7 +220,6 @@ input[type=range]{accent-color:var(--text)}
       </div>
     </div>
 
-    <!-- RELATIONSHIPS -->
     <div id="tab-recipes" class="panel">
       <div class="card">
         <div class="card-title">Ingredient relationships</div>
@@ -232,8 +228,7 @@ input[type=range]{accent-color:var(--text)}
         <div class="sec-label">Add relationship</div>
         <div class="add-row">
           <div class="fg" style="position:relative">
-            <label>Menu item (from Square catalog)</label>
-            <input type="text" id="rel-menu" placeholder="Start typing…" oninput="filterSuggestions(this.value)" autocomplete="off" onblur="setTimeout(()=>hideSuggestions(),150)"/>
+            <label>Menu item (from Square catalog)</label> <input type="text" id="rel-menu" placeholder="Start typing…" oninput="filterSuggestions(this.value)" autocomplete="off" onblur="setTimeout(()=>hideSuggestions(),150)"/>
             <div id="rel-suggestions" style="display:none;position:absolute;width:100%;top:100%;left:0;z-index:50"></div>
           </div>
           <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px">uses</div>
@@ -253,7 +248,6 @@ input[type=range]{accent-color:var(--text)}
       </div>
     </div>
 
-    <!-- OOS -->
     <div id="tab-oos" class="panel">
       <div class="card">
         <div class="card-title">Out-of-stock events <span class="badge binfo">auto-detected from Square</span></div>
@@ -275,39 +269,24 @@ input[type=range]{accent-color:var(--text)}
       </div>
     </div>
 
-    <!-- GENERATE -->
-    <div id="tab-generate" class="panel">
+    <div id="tab-generate" class="panel active">
 
-      <!-- Step 1: Fetch -->
       <div class="card" id="gen-fetch-card">
         <div class="card-title">Step 1 — Pull sales data</div>
-        <div class="hint">Automatically pulls the last two of each weekday and averages them. If the two weeks differ by &gt;20%, a third week is pulled and the two closest are used.</div>
-        <div class="row2">
+        <div class="hint">Runs an accelerated batch analytical query using Square's modern Reporting API across historical date sets instantly.</div>
+        <div class="row2" style="display:none;">
           <div class="fg"><label>Open time</label><input type="time" id="open-time" value="08:00" oninput="debounceSave()"/></div>
           <div class="fg"><label>Close time</label><input type="time" id="close-time" value="17:00" oninput="debounceSave()"/></div>
         </div>
         <div class="btn-row">
-          <button class="btn btnp" id="fetch-btn" onclick="fetchData()">Pull last 2 weeks of data</button>
-          <button class="btn" onclick="generate(true)">Debug item names</button>
-          <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
-          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px"/>
-          <button class="btn" onclick="debugItemOos()">Debug this item's history</button>
+          <button class="btn btnp" id="fetch-btn" onclick="fetchData()">Pull multi-week data via Reporting API</button>
+          <button class="btn" onclick="generate(true)" style="display:none;">Debug item names</button>
+          <button class="btn" onclick="debugOos()" style="display:none;">Debug OOS raw response</button>
         </div>
       </div>
 
       <div id="gen-status"></div>
-      <div id="debug-wrap" style="display:none">
-        <div class="sec-label">Debug — exact Square item names (last Tuesday, Redmond)</div>
-        <div class="output" id="debug-area" style="max-height:260px"></div>
-      </div>
-      <div id="debug-oos-wrap" style="display:none">
-        <div class="sec-label">Debug — raw OOS inventory changes (last Tuesday, Redmond)</div>
-        <div class="output" id="debug-oos-area" style="max-height:400px"></div>
-      </div>
 
-      <!-- Step 2: Review + adjust (shown after fetch) -->
       <div id="gen-review-wrap" style="display:none">
         <div class="card">
           <div class="card-title">Step 2 — Next week projection <span class="badge berr" id="proj-required-badge">required</span></div>
@@ -347,7 +326,7 @@ input[type=range]{accent-color:var(--text)}
               <div class="hint" style="margin:0">Adjust any item's % to override the projection. Final numbers update live. <span style="color:var(--text3)">Final total includes per-cell rounding and may be a few units higher than the baseline.</span></div>
             </div>
             <div style="display:flex;gap:8px;align-items:center">
-              <button class="btn btnp btnsm" onclick="toggleOosEnabled()" id="oos-toggle-btn">OOS adj: ON</button>
+              <button class="btn btnp btnsm" onclick="toggleOosEnabled()" id="oos-toggle-btn" style="display:none;">OOS adj: ON</button>
               <button class="btn btnsm" onclick="toggleAllDays()" id="toggle-days-btn">Show daily</button>
             </div>
           </div>
@@ -395,20 +374,20 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
 let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{} };
-// autoOosData: populated during fetchData, never persisted to Supabase
-// structure: { 'dayName|locKey': { itemName: 'HH:MM' } }
 let autoOosData = {};
-let oosAdjustmentTotals = {}; // itemName -> units added by OOS adjustment (most recent week)
-let oosMissedSalesDetail = {}; // 'Day|Loc' -> { itemName: estimatedMissedUnits } (most recent week, for OOS tab)
-let rawBaselineData = {}; // same as baselineData but WITHOUT OOS additions — for the historical avg column
-let oosEnabled = true; // toggle for Step 3 — whether OOS adjustments are included in final numbers
-let dayLocAdjs = []; // [{day:'Friday', loc:'Red'|'all', pct:20, dir:'increase'|'drop'}]
-let salesByDowGlobal = {}; // persisted copy of salesByDow for the Verify tab
-let salesByDowDates = {}; // dow -> [date strings] for display in Verify tab
+let oosAdjustmentTotals = {}; 
+let oosMissedSalesDetail = {}; 
+let rawBaselineData = {}; 
+let oosEnabled = false; 
+let dayLocAdjs = []; 
+let salesByDowGlobal = {}; 
+let salesByDowDates = {}; 
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red';
 let orderQtys = {};
 let saveTimer = null;
+let baselineData = {};
+let showAllDaysGlobal = false;
 
 // ── AUTH ──────────────────────────────────────────────────
 async function init() {
@@ -469,7 +448,6 @@ async function loadConfig(){
     cfg.kitchen_buffer = data.kitchen_buffer||5;
     cfg.item_multipliers = data.item_multipliers||{};
   }
-  // Load OOS for current week from Supabase
   const weekStart = getDefaultWeekStart();
   const { data: oosRows } = await sb.from('bakery_oos').select('*').eq('week_start', weekStart);
   oosData = {};
@@ -478,12 +456,9 @@ async function loadConfig(){
     if(!oosData[key]) oosData[key]=[];
     oosData[key].push({name:row.item_name, time:row.sold_out_time, id:row.id});
   }
-  // Square token is shared via Supabase (same as other config fields)
-  // No localStorage read needed; it was loaded above from cfg.sq_token
 }
 
 function saveSharedToken(){
-  // Debounce — only save after user stops typing
   clearTimeout(window._tokenTimer);
   window._tokenTimer = setTimeout(async ()=>{
     const val = document.getElementById('sq-token').value.trim();
@@ -499,21 +474,25 @@ function applyConfig(){
   document.getElementById('loc-bel').value = cfg.loc_bel||'';
   document.getElementById('loc-wood').value = cfg.loc_wood||'';
   document.getElementById('kitchen-buffer').value = cfg.kitchen_buffer;
-  document.getElementById('open-time').value = cfg.open_time;
-  document.getElementById('close-time').value = cfg.close_time;
-  renderProdItems(); renderRels(); renderCatalogGrid();
-  renderOosDays(); renderOosLocs(); renderAutoOosList(); renderOosList();
+  renderProdItems();
+  renderRels();
+  renderCatalogGrid();
+  renderOosDays();
+  renderOosLocs();
+  renderAutoOosList();
+  renderOosList();
   renderDayLocAdjs();
   updateRelProdSelect();
   if(cfg.catalog.length) document.getElementById('catalog-count').textContent = cfg.catalog.length+' items';
-  // Set default week start
   document.getElementById('week-start').value = getDefaultWeekStart();
 }
 
 function getDefaultWeekStart(){
-  const today = new Date(); const d = today.getDay();
+  const today = new Date();
+  const d = today.getDay();
   const diff = d===2?7:(d<2?d+5:d-2);
-  const tue = new Date(today); tue.setDate(today.getDate()-diff);
+  const tue = new Date(today);
+  tue.setDate(today.getDate()-diff);
   return tue.toISOString().split('T')[0];
 }
 
@@ -529,692 +508,68 @@ async function saveConfig(){
     loc_red: document.getElementById('loc-red').value.trim(),
     loc_bel: document.getElementById('loc-bel').value.trim(),
     loc_wood: document.getElementById('loc-wood').value.trim(),
-    open_time: document.getElementById('open-time').value,
-    close_time: document.getElementById('close-time').value,
-    kitchen_buffer: parseFloat(document.getElementById('kitchen-buffer').value)||5,
-    catalog: cfg.catalog,
-    prod_items: cfg.prod_items,
-    rels: cfg.rels,
-    item_multipliers: cfg.item_multipliers,
-    updated_at: new Date().toISOString(),
-    updated_by: currentUser.id
+    kitchen_buffer: parseFloat(document.getElementById('kitchen-buffer').value)||5
   };
   Object.assign(cfg, update);
-  await sb.from('bakery_config').upsert({id:'main',...update});
+  await sb.from('bakery_config').update({
+    ...update,
+    updated_at: new Date().toISOString(),
+    updated_by: currentUser.id
+  }).eq('id','main');
 }
 
-async function saveConfigField(field, value){
-  cfg[field] = value;
-  await sb.from('bakery_config').update({[field]:value, updated_at:new Date().toISOString(), updated_by:currentUser.id}).eq('id','main');
+function token(){
+  return document.getElementById('sq-token').value.trim() || cfg.sq_token;
 }
 
-// ── TABS ──────────────────────────────────────────────────
-function showTab(name, el){
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  el.classList.add('active');
-}
-
-function setStatus(id, msg, type){
-  const el=document.getElementById(id);
-  if(el) el.innerHTML=msg?`<div class="status s${type}">${msg}</div>`:'';
-}
-
-// ── SQUARE ────────────────────────────────────────────────
-function token(){ return document.getElementById('sq-token').value.trim()||cfg.sq_token||''; }
-function proxyBase(){ return (document.getElementById('proxy-url').value.trim()||cfg.proxy_url||'').replace(/\/$/,''); }
 function sqUrl(path){
-  const base=proxyBase();
-  if(!base){ alert('Add your proxy URL in the Setup tab.'); throw new Error('No proxy URL'); }
-  return base+'/proxy'+path;
-}
-function sqH(){ return {'Authorization':'Bearer '+token(),'Content-Type':'application/json','Square-Version':SQ_VER}; }
-
-async function testConn(){
-  if(!token()){setStatus('api-status','Enter your Square token first.','err');return;}
-  setStatus('api-status','<span class="spin"></span> Connecting…','info');
-  try{
-    const r=await fetch(sqUrl('/v2/locations'),{headers:sqH()});
-    const d=await r.json();
-    if(d.locations){
-      setStatus('api-status','Connected. Locations: '+d.locations.map(l=>`${l.name} (${l.id})`).join(' · '),'ok');
-    } else { setStatus('api-status','Error: '+(d.errors?.[0]?.detail||'Unknown'),'err'); }
-  } catch(e){ setStatus('api-status','Connection failed: '+e.message,'err'); }
+  const base = cfg.proxy_url.replace(/\/+$/,'');
+  return base + '/proxy' + path;
 }
 
-// ── CATALOG SYNC ──────────────────────────────────────────
+// ── SYNC CATALOG ──────────────────────────────────────────
 async function syncCatalog(){
-  if(!token()){setStatus('catalog-status','Enter your Square token first.','err');return;}
-  setStatus('catalog-status','<span class="spin"></span> Fetching catalog…','info');
+  const tok = token();
+  if(!tok){setStatus('catalog-status','Access token required.','err');return;}
+  setStatus('catalog-status','<span class="spin"></span> Syncing catalog from Square…','info');
   try{
-    let items=[],variations={},cursor=null;
-    do{
-      const url=sqUrl('/v2/catalog/list?types=ITEM')+(cursor?'&cursor='+cursor:'');
-      const r=await fetch(url,{headers:sqH()});
-      const d=await r.json();
-      if(d.errors){setStatus('catalog-status','Error: '+d.errors[0].detail,'err');return;}
-      if(d.objects){
-        for(const obj of d.objects){
-          if(obj.type==='ITEM'&&obj.item_data){
-            const base=obj.item_data.name;
-            if(obj.item_data.variations&&obj.item_data.variations.length>1){
-              for(const v of obj.item_data.variations){
-                const vn=v.item_variation_data?.name;
-                const displayName=vn&&vn.toLowerCase()!=='regular'?`${base} — ${vn}`:base;
-                items.push(displayName);
-                if(v.id) variations[displayName]=v.id;
-              }
-            } else {
-              items.push(base);
-              const v=obj.item_data.variations?.[0];
-              if(v?.id) variations[base]=v.id;
-            }
+    const res = await fetch(sqUrl('/v2/catalog/list?types=ITEM'), {
+      headers:{ 'Authorization':'Bearer '+tok, 'Square-Version':SQ_VER }
+    });
+    const data = await res.json();
+    if(data.errors) throw new Error(data.errors[0].detail);
+    const raw = data.objects||[];
+    const list = [];
+    const vars = {};
+    for(const obj of raw){
+      if(obj.type==='ITEM' && obj.item_data){
+        const name = obj.item_data.name;
+        list.push(name);
+        for(const v of obj.item_data.variations||[]){
+          if(v.item_variation_data){
+            vars[v.id] = { name: name, vname: v.item_variation_data.name };
           }
         }
       }
-      cursor=d.cursor||null;
-    } while(cursor);
-    cfg.catalog=[...new Set(items)].sort();
-    cfg.catalog_variations=variations;
-    await saveConfigField('catalog', cfg.catalog);
-    await saveConfigField('catalog_variations', cfg.catalog_variations);
+    }
+    list.sort();
+    cfg.catalog = list;
+    cfg.catalog_variations = vars;
+    await sb.from('bakery_config').update({
+      catalog: list,
+      catalog_variations: vars,
+      updated_at: new Date().toISOString(),
+      updated_by: currentUser.id
+    }).eq('id','main');
+    document.getElementById('catalog-count').textContent = list.length+' items';
     renderCatalogGrid();
-    document.getElementById('catalog-count').textContent=cfg.catalog.length+' items synced';
-    setStatus('catalog-status','Synced — '+cfg.catalog.length+' items (variation IDs captured for OOS detection).','ok');
-  } catch(e){ setStatus('catalog-status','Failed: '+e.message,'err'); }
-}
-
-function renderCatalogGrid(){
-  const g=document.getElementById('catalog-grid');
-  if(!cfg.catalog.length){g.style.display='none';return;}
-  g.style.display='grid';
-  g.innerHTML=cfg.catalog.map(n=>`<div class="cat-item" title="${n}">${n.length>30?n.slice(0,29)+'…':n}</div>`).join('');
-}
-
-// ── PRODUCTION ITEMS ──────────────────────────────────────
-function addProdItem(){
-  const name=document.getElementById('new-prod').value.trim();
-  const sec=document.getElementById('new-prod-sec').value;
-  const oos_cutoff=document.getElementById('new-prod-cutoff').value||'14:00';
-  if(!name)return;
-  if(cfg.prod_items.find(p=>p.name.toLowerCase()===name.toLowerCase())){alert('Already exists.');return;}
-  cfg.prod_items.push({name,sec,oos_cutoff});
-  saveConfigField('prod_items',cfg.prod_items);
-  document.getElementById('new-prod').value='';
-  renderProdItems(); updateRelProdSelect();
-}
-
-function removeProdItem(i){
-  const name=cfg.prod_items[i].name;
-  if(!confirm(`Remove "${name}"?`))return;
-  cfg.prod_items.splice(i,1);
-  cfg.rels=cfg.rels.filter(r=>r.prod!==name);
-  saveConfigField('prod_items',cfg.prod_items);
-  saveConfigField('rels',cfg.rels);
-  renderProdItems(); renderRels(); updateRelProdSelect();
-}
-
-function setProdCutoff(i, val){
-  cfg.prod_items[i].oos_cutoff = val;
-  saveConfigField('prod_items', cfg.prod_items);
-}
-
-function renderProdItems(){
-  const el=document.getElementById('prod-items-list');
-  if(!cfg.prod_items.length){el.innerHTML='<p class="empty">No production items yet.</p>';return;}
-  const retail=cfg.prod_items.filter(p=>p.sec==='retail');
-  const kitchen=cfg.prod_items.filter(p=>p.sec==='kitchen');
-
-  let html=`<div style="font-size:12px;color:var(--text2);margin-bottom:10px">
-    Drag the <span style="font-weight:600">⠿</span> handle to reorder — output order matches this list exactly.
-  </div>`;
-
-  const renderSection=(items,label)=>{
-    if(!items.length)return'';
-    const isKitchen=items[0].sec==='kitchen';
-    let s=`<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:8px 0 4px">${label}</div>`;
-    s+=`<div id="sortable-${isKitchen?'kitchen':'retail'}" style="border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden">`;
-    s+=items.map(p=>{
-      const i=cfg.prod_items.indexOf(p);
-      const count=cfg.rels.filter(r=>r.prod===p.name).length;
-      const cutoff=p.oos_cutoff||'14:00';
-      return `<div class="drag-row" draggable="true" data-index="${i}" data-sec="${p.sec}"
-        style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:0.5px solid var(--border);background:var(--bg);cursor:default"
-        ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="dragDrop(event)" ondragend="dragEnd(event)">
-        <span style="cursor:grab;font-size:16px;color:var(--text3);flex-shrink:0;line-height:1">⠿</span>
-        <span style="flex:1;font-size:13px;font-weight:500">${p.name}</span>
-        <span class="badge ${p.sec==='kitchen'?'bpurp':'binfo'}" style="flex-shrink:0">${p.sec}</span>
-        <span style="font-size:12px;color:var(--text2);min-width:60px">${count} rel${count!==1?'s':''}</span>
-        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0" title="OOS cutoff — sellouts after this time won't add missed sales">
-          <span style="font-size:11px;color:var(--text3)">cutoff</span>
-          <input type="time" value="${cutoff}" style="width:90px;font-size:12px;padding:3px 6px"
-            onchange="setProdCutoff(${i},this.value)" onclick="event.stopPropagation()"/>
-        </div>
-        <button class="btn btnsm" onclick="removeProdItem(${i})" style="flex-shrink:0">✕</button>
-      </div>`;
-    }).join('');
-    s+='</div>';
-    return s;
-  };
-
-  html+=renderSection(retail,'Retail — output order');
-  html+=renderSection(kitchen,'Kitchen — output order');
-  el.innerHTML=html;
-}
-
-// ── DRAG AND DROP ─────────────────────────────────────────
-let dragSrcIndex=null;
-
-function dragStart(e){
-  dragSrcIndex=parseInt(e.currentTarget.dataset.index);
-  e.currentTarget.style.opacity='0.4';
-  e.dataTransfer.effectAllowed='move';
-}
-
-function dragOver(e){
-  e.preventDefault();
-  e.dataTransfer.dropEffect='move';
-  // Highlight drop target
-  document.querySelectorAll('.drag-row').forEach(r=>r.style.borderTop='');
-  const target=e.currentTarget;
-  if(target.dataset.index!=dragSrcIndex) target.style.borderTop='2px solid var(--info)';
-}
-
-function dragEnd(e){
-  e.currentTarget.style.opacity='1';
-  document.querySelectorAll('.drag-row').forEach(r=>r.style.borderTop='');
-  dragSrcIndex=null;
-}
-
-function dragDrop(e){
-  e.preventDefault();
-  const destIndex=parseInt(e.currentTarget.dataset.index);
-  if(destIndex===dragSrcIndex||dragSrcIndex===null)return;
-  const srcItem=cfg.prod_items[dragSrcIndex];
-  const destItem=cfg.prod_items[destIndex];
-  // Only allow reorder within same section
-  if(srcItem.sec!==destItem.sec)return;
-  cfg.prod_items.splice(dragSrcIndex,1);
-  const newDest=destIndex>dragSrcIndex?destIndex-1:destIndex;
-  cfg.prod_items.splice(newDest,0,srcItem);
-  saveConfigField('prod_items',cfg.prod_items);
-  renderProdItems();
-}
-
-function updateRelProdSelect(){
-  const s=document.getElementById('rel-prod');
-  s.innerHTML='<option value="">— select —</option>'+cfg.prod_items.map(p=>`<option value="${p.name}">${p.name} (${p.sec})</option>`).join('');
-}
-
-// ── AUTOCOMPLETE ──────────────────────────────────────────
-function filterSuggestions(q){
-  const box=document.getElementById('rel-suggestions');
-  if(!q||q.length<2){box.style.display='none';return;}
-  const matches=cfg.catalog.filter(c=>c.toLowerCase().includes(q.toLowerCase())).slice(0,10);
-  if(!matches.length){box.style.display='none';return;}
-  box.style.display='block';
-  box.innerHTML=`<div class="suggest-box">${matches.map(m=>`<div class="suggest-item" onmousedown="pickSug('${m.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">${m}</div>`).join('')}</div>`;
-}
-function pickSug(val){ document.getElementById('rel-menu').value=val; document.getElementById('rel-suggestions').style.display='none'; }
-function hideSuggestions(){ document.getElementById('rel-suggestions').style.display='none'; }
-
-// ── RELATIONSHIPS ─────────────────────────────────────────
-function addRel(){
-  const menu=document.getElementById('rel-menu').value.trim();
-  const qty=parseFloat(document.getElementById('rel-qty').value);
-  const prod=document.getElementById('rel-prod').value;
-  if(!menu||!prod||isNaN(qty)||qty<=0){alert('Fill in all fields.');return;}
-  cfg.rels.push({menu,qty,prod});
-  saveConfigField('rels',cfg.rels);
-  document.getElementById('rel-menu').value='';
-  document.getElementById('rel-qty').value='';
-  document.getElementById('rel-prod').value='';
-  document.getElementById('rel-suggestions').style.display='none';
-  renderRels(); renderProdItems();
-}
-
-function removeRel(i){ cfg.rels.splice(i,1); saveConfigField('rels',cfg.rels); renderRels(); renderProdItems(); }
-
-function toggleRelOosExclude(i){
-  cfg.rels[i].excludeOos = !cfg.rels[i].excludeOos;
-  saveConfigField('rels',cfg.rels);
-  renderRels();
-}
-
-function renderRels(){
-  const el=document.getElementById('rel-list');
-  if(!cfg.rels.length){el.innerHTML='<p class="empty">No relationships yet.</p>';return;}
-  const byProd={};
-  for(const r of cfg.rels){if(!byProd[r.prod])byProd[r.prod]=[];byProd[r.prod].push(r);}
-  let html='<table class="tbl"><thead><tr><th>Menu item</th><th>Uses</th><th>Production item</th><th>OOS tracking</th><th></th></tr></thead><tbody>';
-  for(const [prod,rs] of Object.entries(byProd)){
-    const pi=cfg.prod_items.find(p=>p.name===prod);
-    html+=`<tr class="tbl-section"><td colspan="5">${prod} <span class="badge ${pi?.sec==='kitchen'?'bpurp':'binfo'}">${pi?.sec||''}</span></td></tr>`;
-    html+=rs.map(r=>{
-      const i=cfg.rels.indexOf(r);
-      const excluded = !!r.excludeOos;
-      return `<tr>
-        <td>${r.menu}</td>
-        <td style="color:var(--text2)">${r.qty}×</td>
-        <td>${r.prod}</td>
-        <td>
-          <button class="btn btnsm ${excluded?'':'btnp'}" onclick="toggleRelOosExclude(${i})"
-            title="${excluded ? 'OOS events for this menu item are ignored for this production item — click to re-enable' : 'OOS events adjust this production item — click to exclude for bundle items where one component should not affect the others'}">
-            ${excluded ? 'Excluded' : 'Tracked'}
-          </button>
-        </td>
-        <td><button class="btn btnsm" onclick="removeRel(${i})">✕</button></td>
-      </tr>`;
-    }).join('');
+    setStatus('catalog-status','Synced '+list.length+' items successfully.','ok');
+  }catch(e){
+    setStatus('catalog-status','Sync failed: '+e.message,'err');
   }
-  html+='</tbody></table>';
-  el.innerHTML=html;
-}
-
-// ── OOS ───────────────────────────────────────────────────
-function renderOosDays(){ document.getElementById('oos-days').innerHTML=DAYS.map(d=>`<button class="dtab${d===curOosDay?' active':''}" onclick="switchOosDay('${d}')">${d.slice(0,3)}</button>`).join(''); }
-function renderOosLocs(){ document.getElementById('oos-locs').innerHTML=LOCS.map(l=>`<button class="ltab${l===curOosLoc?' active':''}" onclick="switchOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join(''); }
-function switchOosDay(d){ curOosDay=d; renderOosDays(); renderAutoOosList(); renderOosList(); }
-function switchOosLoc(l){ curOosLoc=l; renderOosLocs(); renderAutoOosList(); renderOosList(); }
-
-function renderAutoOosList(){
-  const el=document.getElementById('auto-oos-list');
-  if(!el) return;
-  const key=curOosDay+'|'+curOosLoc;
-  const autoItems=autoOosData[key]||{};
-  const entries=Object.entries(autoItems);
-  if(!entries.length){
-    el.innerHTML=`<p class="empty" style="text-align:left;padding:10px 0">No auto-detected OOS events for ${curOosDay} at ${LOC_LABEL[curOosLoc]}. Fetch data on the Generate tab to populate this.</p>`;
-    return;
-  }
-  const closeTime=cfg.close_time||'17:00';
-  let html='<table class="tbl"><thead><tr><th>Item</th><th>OOS intervals</th><th>Cutoff</th><th>Status</th><th>Est. missed sales</th></tr></thead><tbody>';
-  for(const [name, intervals] of entries.sort((a,b)=>a[0].localeCompare(b[0]))){
-    const pi=cfg.prod_items.find(p=>p.name===name);
-    const cutoff=pi?.oos_cutoff||'23:59';
-    const manualOverride=(oosData[key]||[]).find(o=>o.name===name);
-
-    const openTime = cfg.open_time || '08:00';
-    const intervalsText = intervals.map(iv => {
-      // Treat an until time before opening as malformed/stale — display as "close"
-      const untilDisplay = (iv.until && iv.until >= openTime) ? iv.until : null;
-      return iv.from + (untilDisplay ? ` – ${untilDisplay}` : ' – close');
-    }).join(', ');
-
-    const activeIntervals = intervals.filter(iv => iv.from < cutoff);
-    let statusBadge, statusNote;
-    if(manualOverride){
-      statusBadge='bpurp'; statusNote=`manual override (${manualOverride.time})`;
-    } else if(!activeIntervals.length){
-      statusBadge='bok'; statusNote='all after cutoff — no adjustment';
-    } else {
-      const count = activeIntervals.length;
-      statusBadge='bwarn'; statusNote=`${count} interval${count>1?'s':''} adjusted`;
-    }
-
-    const missedSales = oosMissedSalesDetail[key]?.[name];
-    const missedSalesText = (missedSales!==undefined)
-      ? (missedSales>0 ? `+${missedSales}` : '—')
-      : '<span style="color:var(--text3)" title="Fetch data on the Generate tab to calculate">not calculated</span>';
-
-    html+=`<tr>
-      <td style="font-weight:500">${name}</td>
-      <td style="font-size:12px;color:var(--text2)">${intervalsText}</td>
-      <td style="color:var(--text2)">${cutoff==='23:59'?'—':cutoff}</td>
-      <td><span class="badge ${statusBadge}">${statusNote}</span></td>
-      <td style="font-weight:600;color:${missedSales>0?'var(--warn)':'var(--text2)'}">${missedSalesText}</td>
-    </tr>`;
-  }
-  html+='</tbody></table>';
-  el.innerHTML=html;
-}
-
-async function reloadOosWeek(){
-  const weekStart=document.getElementById('week-start').value||getDefaultWeekStart();
-  const { data: oosRows } = await sb.from('bakery_oos').select('*').eq('week_start', weekStart);
-  oosData = {};
-  for(const row of oosRows||[]){
-    const key = row.day_name+'|'+row.loc_key;
-    if(!oosData[key]) oosData[key]=[];
-    oosData[key].push({name:row.item_name, time:row.sold_out_time, id:row.id});
-  }
-  renderAutoOosList();
-  renderOosList();
-}
-
-function renderOosList(){
-  const key=curOosDay+'|'+curOosLoc;
-  const items=oosData[key]||[];
-  const el=document.getElementById('oos-list');
-  if(!items.length){el.innerHTML=`<p class="empty">No OOS events for ${curOosDay} at ${LOC_LABEL[curOosLoc]}.</p>`;return;}
-  el.innerHTML='<table class="tbl"><thead><tr><th>Item</th><th>Sold out at</th><th></th></tr></thead><tbody>'+
-    items.map((item,i)=>`<tr><td>${item.name}</td><td><input type="time" value="${item.time}" onchange="updateOosTime('${key}',${i},this.value)" style="width:100px"/></td><td><button class="btn btnsm" onclick="removeOosEntry('${key}',${i})">✕</button></td></tr>`).join('')+
-    '</tbody></table>';
-}
-
-async function addOosEntry(){
-  const prodNames=cfg.prod_items.map(p=>p.name);
-  if(!prodNames.length){alert('Add production items in the Catalog tab first.');return;}
-  const name=prompt('Which production item sold out?\n\n'+prodNames.join('\n'));
-  if(!name)return;
-  const match=prodNames.find(n=>n.toLowerCase()===name.trim().toLowerCase());
-  if(!match){alert('Use an exact production item name.');return;}
-  const key=curOosDay+'|'+curOosLoc;
-  if(!oosData[key]) oosData[key]=[];
-  const weekStart=document.getElementById('week-start').value||getDefaultWeekStart();
-  const { data:row } = await sb.from('bakery_oos').insert({
-    week_start:weekStart, day_name:curOosDay, loc_key:curOosLoc,
-    item_name:match, sold_out_time:'12:00'
-  }).select().single();
-  oosData[key].push({name:match, time:'12:00', id:row?.id});
-  renderOosList();
-}
-
-async function updateOosTime(key, i, val){
-  oosData[key][i].time=val;
-  if(oosData[key][i].id){
-    await sb.from('bakery_oos').update({sold_out_time:val}).eq('id',oosData[key][i].id);
-  }
-}
-
-async function removeOosEntry(key, i){
-  const entry=oosData[key][i];
-  if(entry.id) await sb.from('bakery_oos').delete().eq('id',entry.id);
-  oosData[key].splice(i,1);
-  renderOosList();
-}
-
-// ── SQUARE DATA FETCHING ──────────────────────────────────
-function timeToH(t){ const[h,m]=t.split(':').map(Number); return h+m/60; }
-
-// Converts a local Date object to the ISO string for midnight Pacific time on that
-// calendar date. Square's API uses UTC timestamps, so we need to send the correct
-// UTC equivalent of "midnight Pacific" to fetch a full calendar day's orders.
-function pacificMidnightISO(date){
-  const d = new Date(date);
-  // Format as YYYY-MM-DD in Pacific time
-  const pacificDate = d.toLocaleDateString('en-CA', {timeZone:'America/Los_Angeles'});
-  const [y,m,day] = pacificDate.split('-').map(Number);
-  // Find the UTC instant that corresponds to midnight Pacific on this date
-  // by trying PDT (-7) and PST (-8) offsets and verifying with Intl
-  for(const offsetH of [7, 8]){
-    const candidate = new Date(Date.UTC(y, m-1, day, offsetH, 0, 0));
-    const check = candidate.toLocaleString('en-US', {
-      timeZone:'America/Los_Angeles',
-      hour:'2-digit', minute:'2-digit', hour12:false
-    });
-    if(check === '00:00') return candidate.toISOString();
-  }
-  // Fallback
-  return new Date(Date.UTC(y, m-1, day, 7, 0, 0)).toISOString();
-}
-
-async function fetchOrders(locId,startISO,endISO){
-  let orders=[],cursor=null;
-  do{
-    const body={location_ids:[locId],query:{filter:{date_time_filter:{created_at:{start_at:startISO,end_at:endISO}}}}};
-    if(cursor)body.cursor=cursor;
-    const r=await fetch(sqUrl('/v2/orders/search'),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
-    const d=await r.json();
-    if(d.errors)throw new Error(d.errors[0].detail);
-    if(d.orders)orders=orders.concat(d.orders);
-    cursor=d.cursor||null;
-  }while(cursor);
-  return orders;
-}
-
-function aggregateOrders(orders){
-  const counts={},hourly={};
-  for(const o of orders){
-    if(!o.line_items)continue;
-    const hr=new Date(o.created_at).getHours();
-    for(const li of o.line_items){
-      const base=li.name||'?';
-      const vn=li.variation_name||'';
-      const full=vn&&vn.toLowerCase()!=='regular'?`${base} — ${vn}`:base;
-      const qty=parseInt(li.quantity)||1;
-      counts[full]=(counts[full]||0)+qty;
-      if(!hourly[full])hourly[full]={};
-      hourly[full][hr]=(hourly[full][hr]||0)+qty;
-    }
-  }
-  return{counts,hourly};
-}
-
-function cleanName(s){ return s.replace(/[\u200B-\u200D\uFEFF\u00A0]/g,'').trim().toLowerCase(); }
-function nameMatches(sqKey,relName){
-  const sk=cleanName(sqKey),rn=cleanName(relName);
-  return sk===rn||sk.startsWith(rn+' \u2014 ')||sk.startsWith(rn+' - ');
-}
-function lookupSales(sales,menuName){ let t=0; for(const[k,q]of Object.entries(sales))if(nameMatches(k,menuName))t+=q; return t; }
-function lookupHourly(hourly,menuName){
-  const m={};
-  for(const[k,hrs]of Object.entries(hourly))if(nameMatches(k,menuName))for(const[h,q]of Object.entries(hrs))m[h]=(m[h]||0)+q;
-  return Object.keys(m).length?m:null;
-}
-
-// Calculate missed sales for a list of OOS intervals on ONE day, using the
-// hourly demand SHAPE from other sample days of the same weekday (where the
-// item was not OOS during the missed window) as the reference curve.
-//
-// Why: once an item is actually 86'd, its own hourly data for the rest of
-// that window is artificially zero (or near it) — it can't be used to
-// estimate what would have sold. So instead we look at how this item's
-// sales were distributed across hours on the OTHER sample days, and apply
-// that shape to estimate the missed amount, scaled to this day's volume.
-//
-// hourlyData:      this day's hourly sales for the item (used for total daily volume)
-// otherDaysHourly: array of hourly maps from other week samples (same weekday),
-//                  EXCLUDING days where this item/loc was also OOS during the window
-// intervals:       [{from:'HH:MM', until:'HH:MM'|null}] for THIS day
-// cutoff/openTime/closeTime: 'HH:MM'
-//
-// Returns the estimated missed units for this day.
-// Merges overlapping or touching/near-duplicate time intervals into a minimal
-// set of non-overlapping intervals. Used when multiple Square menu items that
-// map to the same production item go OOS together (e.g. variant items sharing
-// a kitchen ingredient) — without this they'd each count as a separate stockout.
-//
-// intervals: [{from:'HH:MM', until:'HH:MM'|null}]
-// "until: null" means open-ended (still OOS) — treated as the latest possible end.
-function mergeIntervals(intervals){
-  if(!intervals?.length) return intervals;
-  const sorted = intervals.slice().sort((a,b)=> timeToH(a.from)-timeToH(b.from));
-  const merged = [sorted[0]];
-  for(let i=1;i<sorted.length;i++){
-    const cur = sorted[i];
-    const last = merged[merged.length-1];
-    const lastUntilH = last.until ? timeToH(last.until) : Infinity;
-    const curFromH = timeToH(cur.from);
-    // Merge if they overlap or are within 5 minutes of each other (same real event,
-    // just logged a few minutes apart by the 15-min tracker resolution)
-    if(curFromH <= lastUntilH + (5/60)){
-      const curUntilH = cur.until ? timeToH(cur.until) : Infinity;
-      if(curUntilH > lastUntilH){
-        last.until = cur.until; // extend (or set to null if cur is open-ended)
-      }
-    } else {
-      merged.push(cur);
-    }
-  }
-  return merged;
-}
-
-function calcOosAddition(hourlyData, otherDaysHourly, intervals, cutoff, openTime, closeTime){
-  if(!hourlyData || !intervals?.length) return 0;
-  const openH=timeToH(openTime), closeH=timeToH(closeTime), cutoffH=timeToH(cutoff||'23:59');
-  const totalSales=Object.values(hourlyData).reduce((a,b)=>a+b,0);
-
-  // Build a reference hourly curve from other days (sum across days per hour).
-  // Other days may be partial (contaminated hours zeroed out) — we still use them,
-  // but we need to normalize correctly. For each reference day, we compute its
-  // total observed sales (non-zeroed hours only) and scale the curve to a
-  // consistent per-day unit so partial days don't under-weight the reference.
-  const refDays = (otherDaysHourly||[]).filter(h=>h && Object.keys(h).length);
-  const refCurve={}; // hour -> normalized demand share (summed across days)
-  let refDayCount=0;
-
-  for(const dayHourly of refDays){
-    // Total observed sales for this reference day (open hours only)
-    let dayTotal=0;
-    for(const[h,q] of Object.entries(dayHourly)){
-      const hr=parseInt(h);
-      if(hr>=openH && hr<closeH) dayTotal+=q;
-    }
-    if(dayTotal===0) continue;
-    refDayCount++;
-    // Add this day's normalized hourly share to the reference curve
-    for(const[h,q] of Object.entries(dayHourly)){
-      const hr=parseInt(h);
-      if(hr>=openH && hr<closeH) refCurve[hr]=(refCurve[hr]||0)+(q/dayTotal);
-    }
-  }
-
-  // Fallback: if no reference days, use this day's own curve
-  if(refDayCount===0){
-    let dayTotal=0;
-    for(const[h,q] of Object.entries(hourlyData)){
-      const hr=parseInt(h); if(hr>=openH && hr<closeH) dayTotal+=q;
-    }
-    if(dayTotal===0) return 0;
-    for(const[h,q] of Object.entries(hourlyData)){
-      const hr=parseInt(h);
-      if(hr>=openH && hr<closeH) refCurve[hr]=(refCurve[hr]||0)+(q/dayTotal);
-    }
-    refDayCount=1;
-  }
-
-  // refCurve[hr] is now the average fraction of daily demand at each hour
-  // (summed across refDayCount days, so divide by refDayCount to normalize)
-  let missedFraction=0;
-  for(const interval of intervals){
-    const fromH=timeToH(interval.from);
-    if(fromH>=cutoffH) continue;
-    let untilRawH = interval.until ? timeToH(interval.until) : null;
-    if(untilRawH!==null && untilRawH < openH) untilRawH = null;
-    const untilH = untilRawH!==null ? Math.min(untilRawH, cutoffH, closeH) : Math.min(cutoffH, closeH);
-    if(untilH<=fromH) continue;
-
-    let windowShare=0;
-    for(const[h,share] of Object.entries(refCurve)){
-      const hr=parseInt(h);
-      if(hr>=fromH && hr<untilH) windowShare+=share;
-    }
-    missedFraction+=windowShare/refDayCount;
-  }
-
-  return Math.ceil(totalSales*missedFraction);
-}
-
-// ── OOS AUTO-DETECT via Supabase webhook events ───────────
-// Dates before the webhook was set up will simply have no rows → no adjustment.
-
-// Load all OOS intervals for the weeks we're fetching, once, before the orders loop.
-// Returns { locKey: { 'YYYY-MM-DD': { itemName: [{from:'HH:MM', until:'HH:MM'|null}] } } }
-async function loadOosEventCache(weekDates) {
-  const allDates = [...new Set(weekDates.map(d => new Date(d).toISOString().split('T')[0]))];
-  const minDate = allDates.slice().sort()[0];
-  const maxDate = allDates.slice().sort().reverse()[0];
-
-  const { data, error } = await sb
-    .from('bakery_oos_events')
-    .select('item_name, loc_key, unavailable_from, unavailable_until, event_date')
-    .gte('event_date', minDate)
-    .lte('event_date', maxDate);
-
-  if(error || !data) return {};
-
-  // Build: cache[locKey][dateStr][itemName] = [{from:'HH:MM', until:'HH:MM'|null}]
-  const cache = {};
-  for(const row of data){
-    const loc = row.loc_key;
-    const date = typeof row.event_date === 'string' ? row.event_date.split('T')[0] : row.event_date;
-    const fromTime = new Date(row.unavailable_from);
-    const fromHHMM = fromTime.getHours().toString().padStart(2,'0')+':'+fromTime.getMinutes().toString().padStart(2,'0');
-    const untilHHMM = row.unavailable_until
-      ? (t => t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0'))(new Date(row.unavailable_until))
-      : null;
-    if(!cache[loc]) cache[loc]={};
-    if(!cache[loc][date]) cache[loc][date]={};
-    if(!cache[loc][date][row.item_name]) cache[loc][date][row.item_name]=[];
-    cache[loc][date][row.item_name].push({from: fromHHMM, until: untilHHMM});
-  }
-  return cache;
-}
-
-// Returns { itemName: [{from:'HH:MM', until:'HH:MM'|null}] } for a given date/loc.
-function oosEventsForDate(oosCache, dateObj, locKey) {
-  const dateStr = new Date(dateObj).toISOString().split('T')[0];
-  return oosCache?.[locKey]?.[dateStr] || {};
-}
-// Stores fetched baseline data: { itemName: { day: { Red, Bel, Wood } } }
-let baselineData = {};
-let weeksUsedInfo = '';
-let showDailyBreakdown = false;
-
-// Get the last N occurrences of a given weekday (0=Sun..6=Sat) before today
-function getLastNWeekdays(dayOfWeek, n) {
-  const dates = [];
-  const today = new Date();
-  today.setHours(0,0,0,0);
-
-  // Find the start of the current week (most recent Tuesday = week start for this bakery)
-  // Skip any dates from the current week so we only sample complete weeks.
-  const currentWeekStart = new Date(today);
-  while(currentWeekStart.getDay() !== 2) currentWeekStart.setDate(currentWeekStart.getDate()-1);
-  // currentWeekStart is now the most recent Tuesday (could be today if today is Tue)
-
-  let d = new Date(currentWeekStart);
-  d.setDate(d.getDate()-1); // start searching from the day before this week began
-
-  while(dates.length < n) {
-    if(d.getDay() === dayOfWeek) dates.push(new Date(d));
-    d.setDate(d.getDate()-1);
-  }
-  return dates; // most recent first
-}
-
-// Smart average: given 2+ week values, if two closest are within 20%, use those two.
-// Otherwise keep trying with more weeks.
-function smartPairAverage(values) {
-  const indices = smartPairIndices(values);
-  if(!indices) return values.length ? values[0] : 0;
-  return (values[indices[0]]+values[indices[1]])/2;
-}
-
-// Returns the indices [i, j] of the pair to average, or null if < 2 values.
-// Rule:
-//   1. Default to the two most recent weeks (indices 0 and 1).
-//   2. If those two are more than 20% apart from each other, find the closest
-//      pair across all three weeks and use that instead.
-// "Most recent first" is guaranteed by getLastNWeekdays return order.
-function smartPairIndices(values) {
-  if(values.length === 0) return null;
-  if(values.length < 2) return null;
-  if(values.length === 2) return [0, 1];
-
-  const OUTLIER_THRESH = 0.20;
-  const pairDiff = (i, j) => {
-    const avg = (values[i]+values[j])/2;
-    return avg === 0 ? 0 : Math.abs(values[i]-values[j])/avg;
-  };
-
-  // Step 1: are the two most recent weeks close enough?
-  if(pairDiff(0, 1) <= OUTLIER_THRESH) return [0, 1];
-
-  // Step 2: they're too far apart — find the closest pair across all three
-  const pairs = [[0,1],[0,2],[1,2]];
-  let bestPair = [0,1], bestDiff = Infinity;
-  for(const [i,j] of pairs){
-    const diff = pairDiff(i,j);
-    if(diff < bestDiff){ bestDiff=diff; bestPair=[i,j]; }
-  }
-  return bestPair;
 }
 
 // ── REWRITTEN FETCH DATA VIA REPORTING API ────────────────
-
 async function fetchData() {
   const tok = token();
   if (!tok) {
@@ -1234,15 +589,12 @@ async function fetchData() {
   setStatus('gen-status', '<span class="spin"></span> Querying Square Reporting API...', 'info');
   document.getElementById('fetch-btn').disabled = true;
 
-  // 1. Gather historical date range sequences (e.g. your prior 2-3 weeks logic)
   const weekDates = [];
   const today = new Date();
   
-  // Calculate historical target dates for the 3 samples
   for (let weekOffset = 1; weekOffset <= 3; weekOffset++) {
     for (let dow = 0; dow < 7; dow++) {
       const d = new Date(today);
-      // Map DOW index offsets accordingly
       const currentDayOfWeek = today.getDay();
       const diff = currentDayOfWeek === 2 ? 7 : (currentDayOfWeek < 2 ? currentDayOfWeek + 5 : currentDayOfWeek - 2);
       d.setDate(today.getDate() - diff - (weekOffset * 7) + dow);
@@ -1250,54 +602,47 @@ async function fetchData() {
     }
   }
 
-  // Deduplicate and get min/max for the batch analytical reporting window
   const allDates = [...new Set(weekDates)].sort();
   const startDate = allDates[0];
   const endDate = allDates[allDates.length - 1];
-
   const locationIds = [locRed, locBel, locWood].filter(Boolean);
 
   try {
-    // 2. Query the Reporting API load endpoint
-    // Square's Reporting API evaluates calculations asynchronously via a polling loop
     let reportingData = null;
     let isProcessing = true;
     let attempts = 0;
 
-    // Locate this inside your rewritten fetchData() function:
-const payload = {
-  query: {
-    measures: ["ItemSales.quantity_sold"],
-    dimensions: [
-      "ItemSales.item_name",
-      "ItemSales.item_variation_name",
-      "ItemSales.location_id",
-      "ItemSales.local_reporting_date"
-    ],
-    filters: [
-      {
-        dimension: "ItemSales.location_id",
-        operator: "IN",
-        values: locationIds
-      },
-      // ADD THIS STRICT DATE FILTER:
-      {
-        dimension: "ItemSales.local_reporting_date",
-        operator: "BETWEEN",
-        values: [startDate, endDate]
+    const payload = {
+      query: {
+        measures: ["ItemSales.quantity_sold"],
+        dimensions: [
+          "ItemSales.item_name",
+          "ItemSales.item_variation_name",
+          "ItemSales.location_id",
+          "ItemSales.local_reporting_date"
+        ],
+        filters: [
+          {
+            dimension: "ItemSales.location_id",
+            operator: "IN",
+            values: locationIds
+          },
+          {
+            dimension: "ItemSales.local_reporting_date",
+            operator: "BETWEEN",
+            values: [startDate, endDate]
+          }
+        ],
+        timeDimensions: [{
+          dimension: "ItemSales.local_reporting_date",
+          dateRange: [startDate, endDate]
+        }]
       }
-    ],
-    // CHANGE THIS TIME DIMENSION RANGE WINDOW:
-    timeDimensions: [{
-      dimension: "ItemSales.local_reporting_date",
-      dateRange: [startDate, endDate]
-    }]
-  }
-};
+    };
 
     while (isProcessing && attempts < 15) {
       attempts++;
-      const response = await fetch(`${cfg.proxy_url || 'https://connect.squareup.com'}/reporting/v1/load`, {
+      const response = await fetch(sqUrl('/reporting/v1/load'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${tok}`,
@@ -1313,15 +658,14 @@ const payload = {
         throw new Error(resJson.errors[0].detail);
       }
 
-      // Check if report computation needs polling time
-      // Locate this inside your while(isProcessing) loop:
-if (resJson.error === "Continue wait" || resJson.status === "PROCESSING") {
-  setStatus('gen-status', `<span class="spin"></span> Processing report data (Attempt ${attempts})...`, 'info');
-  // Change this timeout value line:
-  await new Promise(resolve => setTimeout(resolve, 3000)); 
-}
+      if (resJson.error === "Continue wait" || resJson.status === "PROCESSING" || (!resJson.data && !resJson.rows && !Array.isArray(resJson))) {
+        setStatus('gen-status', `<span class="spin"></span> Processing report data (Attempt ${attempts})...`, 'info');
+        await new Promise(resolve => setTimeout(resolve, 3000)); 
       } else {
-        reportingData = resJson.data || resJson.rows; // Depends on your Proxy configuration architecture
+        reportingData = resJson.data || resJson.rows || (Array.isArray(resJson) ? resJson : null);
+        if (!reportingData) {
+          throw new Error("Invalid structure returned from server.");
+        }
         isProcessing = false;
       }
     }
@@ -1330,19 +674,14 @@ if (resJson.error === "Continue wait" || resJson.status === "PROCESSING") {
       throw new Error("Reporting API timed out processing this timeframe.");
     }
 
-    // 3. Map reporting aggregates into your application state (salesByDow structure)
-    // Structure expected by your app: salesByDow[dow] = Array of weeks [{ counts: { [itemName]: qty }, hourly: {} }]
     salesByDowGlobal = {};
     salesByDowDates = {};
     
-    // Initialize empty baseline structure for all 7 layout days
     for (let dow = 0; dow < 7; dow++) {
       salesByDowGlobal[dow] = Array.from({ length: 3 }, () => ({ Red: { counts: {} }, Bel: { counts: {} }, Wood: { counts: {} } }));
     }
 
-    // Process rows returned from ItemSales report cube
     reportingData.forEach(row => {
-      // Structure depends on whether you retrieve raw row matrices or named property objects
       const itemName = row["ItemSales.item_name"] || row[0];
       const variationName = row["ItemSales.item_variation_name"] || row[1];
       const rowLocId = row["ItemSales.location_id"] || row[2];
@@ -1353,28 +692,26 @@ if (resJson.error === "Continue wait" || resJson.status === "PROCESSING") {
         ? `${itemName} — ${variationName}` 
         : itemName;
 
-      // Determine which location key match
       let locKey = '';
       if (rowLocId === locRed) locKey = 'Red';
       else if (rowLocId === locBel) locKey = 'Bel';
       else if (rowLocId === locWood) locKey = 'Wood';
       if (!locKey) return;
 
-      // Map date back to its matching slot index in your 3-week matrix array
       const dateObj = new Date(rowDate + 'T00:00:00');
-      const dowIndex = (dateObj.getDay() + 5) % 7; // Aligning with your specific Tuesday-Monday index logic
+      const dowIndex = (dateObj.getDay() + 5) % 7; 
       
-      // Figure out week offset slot (0 = most recent, 1 = 2nd most recent, 2 = 3rd)
       const targetIndex = weekDates.indexOf(rowDate);
       if (targetIndex === -1) return;
       const weekSlot = Math.floor(targetIndex / 7);
 
-      // Populate counts
+      if (!salesByDowDates[dowIndex]) salesByDowDates[dowIndex] = [];
+      salesByDowDates[dowIndex][weekSlot] = rowDate;
+
       const countsRef = salesByDowGlobal[dowIndex][weekSlot][locKey].counts;
       countsRef[fullName] = (countsRef[fullName] || 0) + qtySold;
     });
 
-    // 4. Continue into your custom smart-average computation logic
     calculateBaselinesFromReporting();
 
   } catch (e) {
@@ -1385,7 +722,7 @@ if (resJson.error === "Continue wait" || resJson.status === "PROCESSING") {
 
 // ── COMPUTE RE-MAPPED BASELINES ───────────────────────────
 function calculateBaselinesFromReporting() {
-  setStatus('gen-status', '<span class="spin"></span> Calculating baseline averages…', 'info');
+  setStatus('gen-status', '<span class="spin"></span> Calculating baseline averages...', 'info');
   
   baselineData = {};
   rawBaselineData = {};
@@ -1400,10 +737,8 @@ function calculateBaselinesFromReporting() {
       rawBaselineData[pi.name][dayName] = {};
 
       for (const loc of LOCS) {
-        // Collect quantity counters matching this production item for each of the 3 weeks
         const weeklyQtys = Array.from({ length: 3 }, (_, wIdx) => {
           const sample = salesByDowGlobal[dow][wIdx][loc] || { counts: {} };
-          // Uses your fuzzy recipe cleanName/nameMatches functions to look up production item sales matches
           const rawQty = lookupSales(sample.counts, pi.name) || 0;
           return { qty: rawQty, rawQty: rawQty };
         });
@@ -1411,12 +746,10 @@ function calculateBaselinesFromReporting() {
         const rawQtys = weeklyQtys.map(w => w.rawQty);
         const adjQtys = weeklyQtys.map(w => w.qty);
 
-        // Run your custom smart outlier filter across the 3 weeks
         const bestPairIndices = smartPairIndices(rawQtys);
         const rawAvg = bestPairIndices ? (rawQtys[bestPairIndices[0]] + rawQtys[bestPairIndices[1]]) / 2 : 0;
         const avg = bestPairIndices ? (adjQtys[bestPairIndices[0]] + adjQtys[bestPairIndices[1]]) / 2 : 0;
 
-        // Apply kitchen percentage parameters rules
         if (pi.sec === 'kitchen') {
           const buf = 1 + (parseFloat(document.getElementById('kitchen-buffer')?.value) || cfg.kitchen_buffer || 5) / 100;
           baselineData[pi.name][dayName][loc] = avg * buf;
@@ -1434,525 +767,673 @@ function calculateBaselinesFromReporting() {
   document.getElementById('fetch-btn').disabled = false;
   
   renderBaselineTable();
-  setStatus('gen-status', 'Data aggregated successfully.', 'ok');
-}
-function resetFetch(){
-  document.getElementById('gen-review-wrap').style.display='none';
-  baselineData={};
+  setStatus('gen-status', 'Data aggregated successfully from Square Reporting views.', 'ok');
 }
 
-function updateProjection(){
-  const dir = document.getElementById('proj-direction').value;
-  const pctWrap = document.getElementById('proj-pct-wrap');
-  const pct = parseInt(document.getElementById('proj-pct').value)||10;
-  pctWrap.style.display = (dir==='increase'||dir==='drop') ? 'flex' : 'none';
-  const badge = document.getElementById('proj-required-badge');
-  if(dir){
-    badge.style.display='none';
-    let summary='';
-    if(dir==='steady') summary='Using baseline averages (100%)';
-    else if(dir==='increase') summary=`Projecting +${pct}% on all items (${100+pct}% of baseline)`;
-    else if(dir==='drop') summary=`Projecting −${pct}% on all items (${100-pct}% of baseline)`;
-    document.getElementById('proj-summary').textContent=summary;
-  } else {
-    badge.style.display='';
-    document.getElementById('proj-summary').textContent='';
-  }
-  renderBaselineTable();
-}
-
-function getProjectionMultiplier(){
-  const dir = document.getElementById('proj-direction').value;
-  if(!dir||dir==='steady') return 1;
-  const pct = parseInt(document.getElementById('proj-pct').value)||10;
-  return dir==='increase' ? (100+pct)/100 : (100-pct)/100;
-}
-
-function getFinalQty(itemName, day, loc){
-  const base = oosEnabled
-    ? (baselineData[itemName]?.[day]?.[loc]||0)
-    : (rawBaselineData[itemName]?.[day]?.[loc]||0);
-  const projMult = getProjectionMultiplier();
-  const itemOverride = cfg.item_multipliers[itemName];
-  const effectiveMult = itemOverride !== undefined ? itemOverride/100 : projMult;
-  // Apply day/loc adjustments on top
-  let dayLocMult = 1;
-  for(const adj of dayLocAdjs){
-    const dayMatch = adj.day==='all' || adj.day===day;
-    const locMatch = adj.loc==='all' || adj.loc===loc;
-    if(dayMatch && locMatch){
-      dayLocMult *= adj.dir==='increase' ? (100+adj.pct)/100 : (100-adj.pct)/100;
+function lookupSales(counts, prodName){
+  let total = 0;
+  for(const mItem in counts){
+    if(nameMatches(mItem, prodName)){
+      total += counts[mItem];
+    }
+    for(const r of cfg.rels){
+      if(r.prod===prodName && nameMatches(mItem, r.menu)){
+        total += counts[mItem] * r.qty;
+      }
     }
   }
-  return Math.ceil(base * effectiveMult * dayLocMult);
+  return total;
 }
 
-// ── DAY/LOC ADJUSTMENTS ───────────────────────────────────
+function nameMatches(menuItem, prodName){
+  const m = menuItem.toLowerCase().trim();
+  const p = prodName.toLowerCase().trim();
+  if(m===p) return true;
+  if(m.startsWith(p+' —')||m.startsWith(p+' (')) return true;
+  return false;
+}
+
+function smartPairIndices(arr){
+  if(arr.length<2) return null;
+  if(arr.length===2) return [0,1];
+  let bestDist = Infinity, bestPair = [0,1];
+  for(let i=0;i<arr.length;i++){
+    for(let j=i+1;j<arr.length;j++){
+      const max = Math.max(arr[i],arr[j]);
+      if(max===0){
+        if(0<bestDist){ bestDist=0; bestPair=[i,j]; }
+        continue;
+      }
+      const dist = Math.abs(arr[i]-arr[j])/max;
+      if(dist<bestDist){ bestDist=dist; bestPair=[i,j]; }
+    }
+  }
+  if(bestDist>0.20){
+    return bestPair;
+  }
+  return [0,1];
+}
+
+// ── PROJECTIONS & ADJUSTMENTS ─────────────────────────────
+function updateProjection(){
+  const dir = document.getElementById('proj-direction').value;
+  const wrap = document.getElementById('proj-pct-wrap');
+  const label = document.getElementById('proj-required-badge');
+  const summary = document.getElementById('proj-summary');
+  
+  if(dir==='increase'||dir==='drop') wrap.style.display='flex';
+  else wrap.style.display='none';
+  
+  if(dir){
+    label.className = 'badge bok';
+    label.textContent = 'ready';
+  } else {
+    label.className = 'badge berr';
+    label.textContent = 'required';
+    summary.textContent = '';
+    return;
+  }
+  
+  let txt = 'Base calculations updated: ';
+  if(dir==='steady') txt += 'Flat baseline trends';
+  else if(dir==='increase') txt += '+'+document.getElementById('proj-pct').value+'% across macro lines';
+  else if(dir==='drop') txt += '−'+document.getElementById('proj-pct').value+'% across macro lines';
+  summary.textContent = txt;
+  
+  renderBaselineTable();
+}
+
 function addDayLocAdj(){
-  dayLocAdjs.push({day:'all', loc:'all', pct:10, dir:'increase'});
+  dayLocAdjs.push({day:'Tuesday', loc:'all', pct:10, dir:'increase'});
   renderDayLocAdjs();
   renderBaselineTable();
 }
 
-function removeDayLocAdj(i){
-  dayLocAdjs.splice(i,1);
+function removeDayLocAdj(idx){
+  dayLocAdjs.splice(idx,1);
   renderDayLocAdjs();
   renderBaselineTable();
 }
 
-function updateDayLocAdj(i, field, val){
-  dayLocAdjs[i][field] = field==='pct' ? parseInt(val)||0 : val;
+function updateDayLocAdj(idx, field, val){
+  dayLocAdjs[idx][field] = val;
   renderBaselineTable();
 }
 
 function renderDayLocAdjs(){
-  const el=document.getElementById('day-loc-adj-list');
+  const container = document.getElementById('day-loc-adj-list');
   if(!dayLocAdjs.length){
-    el.innerHTML='<p class="empty" style="text-align:left;padding:8px 0">No adjustments added. Click "+ Add" to create one.</p>';
+    container.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0">No custom targeted overrides added.</div>';
     return;
   }
-  const dayOpts=['all','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
-  const locOpts=[{v:'all',l:'All locations'},{v:'Red',l:'Redmond'},{v:'Bel',l:'Bellevue'},{v:'Wood',l:'Woodinville'}];
-  el.innerHTML=dayLocAdjs.map((adj,i)=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);flex-wrap:wrap">
-      <select style="font-size:13px" onchange="updateDayLocAdj(${i},'day',this.value)">
-        ${dayOpts.map(d=>`<option value="${d}" ${adj.day===d?'selected':''}>${d==='all'?'Every day':d}</option>`).join('')}
-      </select>
-      <select style="font-size:13px" onchange="updateDayLocAdj(${i},'loc',this.value)">
-        ${locOpts.map(o=>`<option value="${o.v}" ${adj.loc===o.v?'selected':''}>${o.l}</option>`).join('')}
-      </select>
-      <select style="font-size:13px" onchange="updateDayLocAdj(${i},'dir',this.value)">
-        <option value="increase" ${adj.dir==='increase'?'selected':''}>increase by</option>
-        <option value="drop" ${adj.dir==='drop'?'selected':''}>drop by</option>
-      </select>
-      <input type="number" value="${adj.pct}" min="1" max="200" step="5" style="width:65px;font-size:13px;text-align:right"
-        oninput="updateDayLocAdj(${i},'pct',this.value)"/>
-      <span style="font-size:13px;color:var(--text2)">%</span>
-      <button class="btn btnsm" onclick="removeDayLocAdj(${i})">✕</button>
-    </div>`).join('');
-}
-
-// ── VERIFY TAB ────────────────────────────────────────────
-function renderVerifyTable(){
-  const el=document.getElementById('verify-table');
-  const labelEl=document.getElementById('verify-date-label');
-  if(!el) return;
-  const dow=parseInt(document.getElementById('verify-dow')?.value||0);
-  const wIdx=parseInt(document.getElementById('verify-week')?.value||0);
-  const sortBy=document.getElementById('verify-sort')?.value||'total';
-
-  if(!salesByDowGlobal[dow]?.[wIdx]){
-    el.innerHTML='<p class="empty">No data — fetch data on the Generate tab first.</p>';
-    if(labelEl) labelEl.textContent='';
-    return;
-  }
-
-  const dateStr=salesByDowDates[dow]?.[wIdx]||'';
-  if(labelEl) labelEl.textContent=dateStr ? `Showing data for ${['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'][dow]} ${dateStr}` : '';
-
-  const weekData=salesByDowGlobal[dow][wIdx];
-  // Collect all item names across all locations
-  const allItems=new Set();
-  for(const loc of LOCS) for(const name of Object.keys(weekData[loc]?.counts||{})) allItems.add(name);
-
-  // Build rows
-  let rows=[];
-  for(const name of allItems){
-    const red=weekData['Red']?.counts?.[name]||0;
-    const bel=weekData['Bel']?.counts?.[name]||0;
-    const wood=weekData['Wood']?.counts?.[name]||0;
-    const total=red+bel+wood;
-    rows.push({name,red,bel,wood,total});
-  }
-
-  // Sort
-  if(sortBy==='total') rows.sort((a,b)=>b.total-a.total);
-  else if(sortBy==='name') rows.sort((a,b)=>a.name.localeCompare(b.name));
-  else if(sortBy==='red') rows.sort((a,b)=>b.red-a.red);
-  else if(sortBy==='bel') rows.sort((a,b)=>b.bel-a.bel);
-  else if(sortBy==='wood') rows.sort((a,b)=>b.wood-a.wood);
-
-  // Highlight production items
-  const prodNames=new Set(cfg.prod_items.map(p=>p.name));
-  const relMenuNames=new Set(cfg.rels.map(r=>r.menu));
-
-  let html=`<table class="tbl"><thead><tr>
-    <th>Square item name</th>
-    <th style="text-align:right">Redmond</th>
-    <th style="text-align:right">Bellevue</th>
-    <th style="text-align:right">Woodinville</th>
-    <th style="text-align:right;font-weight:700">Total</th>
-    <th>Maps to</th>
-  </tr></thead><tbody>`;
-
-  for(const row of rows){
-    const mappedProds=[...new Set(cfg.rels.filter(r=>nameMatches(row.name,r.menu)).map(r=>r.prod))];
-    const isDirectProd=prodNames.has(row.name);
-    const mapsTo=mappedProds.length ? mappedProds.join(', ') : (isDirectProd ? row.name : '—');
-    const rowStyle=mappedProds.length||isDirectProd ? '' : 'color:var(--text3)';
-    html+=`<tr style="${rowStyle}">
-      <td>${row.name}</td>
-      <td style="text-align:right">${row.red||'—'}</td>
-      <td style="text-align:right">${row.bel||'—'}</td>
-      <td style="text-align:right">${row.wood||'—'}</td>
-      <td style="text-align:right;font-weight:600">${row.total||'—'}</td>
-      <td style="font-size:12px;color:var(--text2)">${mapsTo}</td>
-    </tr>`;
-  }
-  html+='</tbody></table>';
-  el.innerHTML=html;
-}
-
-function getItemWeeklyTotal(itemName){
-  let total=0;
-  for(const day of DAYS) for(const loc of LOCS) total+=getFinalQty(itemName,day,loc);
-  return total;
-}
-
-function getItemBaselineTotal(itemName){
-  let total=0;
-  for(const day of DAYS) for(const loc of LOCS){
-    total+=(baselineData[itemName]?.[day]?.[loc]||0);
-  }
-  return Math.round(total);
-}
-
-function getItemRawBaselineTotal(itemName){
-  let total=0;
-  for(const day of DAYS) for(const loc of LOCS){
-    total+=(rawBaselineData[itemName]?.[day]?.[loc]||0);
-  }
-  return Math.round(total);
-}
-
-// Derive OOS adjustment from the actual difference between the two baselines —
-// this always matches what's in the numbers, regardless of which week pair was selected.
-function getItemOosAdjTotal(itemName){
-  return Math.round(getItemBaselineTotal(itemName) - getItemRawBaselineTotal(itemName));
-}
-
-function toggleAllDays(){
-  showDailyBreakdown=!showDailyBreakdown;
-  document.getElementById('toggle-days-btn').textContent=showDailyBreakdown?'Hide daily':'Show daily';
-  renderBaselineTable();
+  let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+  dayLocAdjs.forEach((adj,idx)=>{
+    html += `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select onchange="updateDayLocAdj(${idx},'day',this.value)" style="width:110px;padding:4px 8px">
+          ${DAYS.map(d=>`<option value="${d}" ${adj.day===d?'selected':''}>${d}</option>`).join('')}
+        </select>
+        <select onchange="updateDayLocAdj(${idx},'loc',this.value)" style="width:120px;padding:4px 8px">
+          <option value="all" ${adj.loc=='all'?'selected':''}>All locations</option>
+          <option value="Red" ${adj.loc=='Red'?'selected':''}>Redmond</option>
+          <option value="Bel" ${adj.loc=='Bel'?'selected':''}>Bellevue</option>
+          <option value="Wood" ${adj.loc=='Wood'?'selected':''}>Woodinville</option>
+        </select>
+        <select onchange="updateDayLocAdj(${idx},'dir',this.value)" style="width:100px;padding:4px 8px">
+          <option value="increase" ${adj.dir=='increase'?'selected':''}>boost by</option>
+          <option value="drop" ${adj.dir=='drop'?'selected':''}>reduce by</option>
+        </select>
+        <input type="number" value="${adj.pct}" style="width:60px;padding:4px 8px" oninput="updateDayLocAdj(${idx},'pct',parseInt(this.value)||0)"/>
+        <span style="font-size:13px;color:var(--text2)">%</span>
+        <button class="btn btnsm" style="border-color:var(--err);color:var(--err)" onclick="removeDayLocAdj(${idx})">Remove</button>
+      </div>
+    `;
+  });
+  container.innerHTML = html + '</div>';
 }
 
 function toggleOosEnabled(){
-  oosEnabled=!oosEnabled;
-  const btn=document.getElementById('oos-toggle-btn');
-  btn.textContent=oosEnabled?'OOS adj: ON':'OOS adj: OFF';
-  btn.className='btn '+(oosEnabled?'btnp':'');
+  oosEnabled = !oosEnabled;
+  const btn = document.getElementById('oos-toggle-btn');
+  btn.className = oosEnabled ? 'btn btnp btnsm' : 'btn btnsm';
+  btn.textContent = 'OOS adj: ' + (oosEnabled ? 'ON' : 'OFF');
   renderBaselineTable();
 }
 
+function toggleAllDays(){
+  showAllDaysGlobal = !showAllDaysGlobal;
+  document.getElementById('toggle-days-btn').textContent = showAllDaysGlobal ? 'Hide daily' : 'Show daily';
+  renderBaselineTable();
+}
+
+// ── RENDER BASELINE TABLE ─────────────────────────────────
 function renderBaselineTable(){
-  const el=document.getElementById('baseline-table');
-  if(!Object.keys(baselineData).length){el.innerHTML='';return;}
-  const projMult=getProjectionMultiplier();
-  const retail=cfg.prod_items.filter(p=>p.sec==='retail');
-  const kitchen=cfg.prod_items.filter(p=>p.sec==='kitchen');
-
-  const renderSection=(items,label)=>{
-    if(!items.length)return'';
-    let s=`<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:10px 0 6px">${label}</div>`;
-
-    s+=`<table class="tbl" style="margin-bottom:14px"><thead><tr>
-      <th>Item</th>
-      <th style="text-align:right" title="Smart-pair average of last 2 weeks, excluding OOS adjustments">Hist. avg</th>
-      <th style="text-align:right;color:var(--warn)" title="Estimated missed sales added back due to OOS events">OOS adj</th>
-      <th style="text-align:right;color:var(--info)" title="Historical average + OOS adjustment + global projection">This week baseline</th>
-      <th style="text-align:center;width:110px">Override %</th>
-      <th style="text-align:right;color:var(--info);font-weight:700">Final total</th>
-    </tr></thead><tbody>`;
-
-    for(const pi of items){
-      const rawBase=getItemRawBaselineTotal(pi.name);
-      const oosAdj=oosEnabled?getItemOosAdjTotal(pi.name):0;
-      const thisWeekBase=oosEnabled?getItemBaselineTotal(pi.name):rawBase;
-      const final=getItemWeeklyTotal(pi.name);
-      const override=cfg.item_multipliers[pi.name];
-      const isOverridden=override!==undefined;
-      const safeId='mult_'+pi.name.replace(/[^a-zA-Z0-9]/g,'_');
-
-      s+=`<tr>
-        <td style="font-weight:500">${pi.name}</td>
-        <td style="text-align:right;color:var(--text2)">${rawBase}</td>
-        <td style="text-align:right;color:${oosAdj>0?'var(--warn)':'var(--text3)'};font-weight:${oosAdj>0?600:400}">${oosAdj>0?'+'+oosAdj:'—'}</td>
-        <td style="text-align:right;color:var(--text2)">${Math.round(oosEnabled?thisWeekBase:rawBase)}</td>
-        <td style="text-align:center">
-          <div style="display:flex;align-items:center;gap:4px;justify-content:center">
-            <input type="number" id="${safeId}" value="${isOverridden?override:''}"
-              placeholder="${Math.round(projMult*100)}"
-              min="0" max="500" step="5"
-              style="width:65px;font-size:13px;text-align:right;${isOverridden?'border-color:var(--info);':'opacity:.6'}"
-              oninput="onItemMultChange('${pi.name.replace(/'/g,"\\'")}',this)"/>
-            <span style="font-size:12px;color:var(--text2)">%</span>
-            ${isOverridden?`<button onclick="clearItemMult('${pi.name.replace(/'/g,"\\'")}',this)" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:0" title="Reset to projection">✕</button>`:''}
-          </div>
-        </td>
-        <td style="text-align:right;font-weight:700;font-size:15px;color:var(--info)">${final}</td>
-      </tr>`;
-
-      if(showDailyBreakdown){
-        s+=`<tr><td colspan="6" style="padding:0 0 8px 16px">
-          <table style="font-size:11px;color:var(--text2);border-collapse:collapse;width:100%">
-            <tr><th style="text-align:left;padding:2px 6px;font-weight:500">Day</th>
-              ${LOCS.map(l=>`<th style="text-align:right;padding:2px 6px;font-weight:500">${LOC_LABEL[l]}</th>`).join('')}
-            </tr>
-            ${DAYS.map(day=>`<tr>
-              <td style="padding:2px 6px">${day.slice(0,3)}</td>
-              ${LOCS.map(loc=>`<td style="text-align:right;padding:2px 6px">${getFinalQty(pi.name,day,loc)}</td>`).join('')}
-            </tr>`).join('')}
-          </table>
-        </td></tr>`;
-      }
+  const container = document.getElementById('baseline-table');
+  if(!cfg.prod_items.length){
+    container.innerHTML = '<div class="empty">Define your production catalog line list items first.</div>';
+    return;
+  }
+  
+  const projDir = document.getElementById('proj-direction').value;
+  const projPct = parseFloat(document.getElementById('proj-pct').value)||0;
+  
+  let html = `<table class="tbl"><thead><tr><th style="width:220px">Item</th>`;
+  if(showAllDaysGlobal){
+    for(const day of DAYS){
+      html += `<th style="text-align:center;border-left:1px solid var(--border)">${day.substring(0,3)}</th>`;
     }
-    s+='</tbody></table>';
-    return s;
-  };
-
-  el.innerHTML=renderSection(retail,'Retail')+renderSection(kitchen,'Kitchen');
+  }
+  html += `<th style="text-align:right;width:90px;border-left:1px solid var(--border)">Hist Avg</th>
+           <th style="text-align:right;width:70px">Adj %</th>
+           <th style="text-align:right;width:90px">Final Total</th></tr></thead><tbody>`;
+           
+  const sections = { retail:[], kitchen:[] };
+  cfg.prod_items.forEach(pi=> { if(sections[pi.sec]) sections[pi.sec].push(pi); });
+  
+  for(const sec of ['retail','kitchen']){
+    if(!sections[sec].length) continue;
+    html += `<tr class="tbl-section"><td colspan="${showAllDaysGlobal?10:4}">${sec} lines</td></tr>`;
+    
+    const order = sec==='retail'?RETAIL_ORDER:KITCHEN_ORDER;
+    const sorted = [...sections[sec]].sort((a,b)=>{
+      let ia = order.indexOf(a.name), ib = order.indexOf(b.name);
+      if(ia===-1) ia=999; if(ib===-1) ib=999;
+      return ia-ib;
+    });
+    
+    sorted.forEach(pi=>{
+      let mult = cfg.item_multipliers[pi.name];
+      if(mult===undefined) mult=100;
+      
+      let overallHistSum = 0;
+      let overallFinalSum = 0;
+      let dayColsHtml = '';
+      
+      for(let dIdx=0;dIdx<7;dIdx++){
+        const day = DAYS[dIdx];
+        let dayHistSum = 0;
+        let dayFinalSum = 0;
+        
+        for(const loc of LOCS){
+          let rawCell = baselineData[pi.name]?.[day]?.[loc] || 0;
+          dayHistSum += rawCell;
+          
+          let cell = rawCell;
+          if(projDir==='increase') cell *= (1 + projPct/100);
+          else if(projDir==='drop') cell *= (1 - projPct/100);
+          
+          dayLocAdjs.forEach(adj=>{
+            if(adj.day===day && (adj.loc==='all' || adj.loc===loc)){
+              if(adj.dir==='increase') cell *= (1 + adj.pct/100);
+              else if(adj.dir==='drop') cell *= (1 - adj.pct/100);
+            }
+          });
+          
+          cell *= (mult/100);
+          dayFinalSum += Math.ceil(cell);
+        }
+        
+        overallHistSum += dayHistSum;
+        overallFinalSum += dayFinalSum;
+        
+        if(showAllDaysGlobal){
+          dayColsHtml += `<td style="text-align:center;color:var(--text2);border-left:1px solid var(--border)">${dayFinalSum}</td>`;
+        }
+      }
+      
+      html += `
+        <tr>
+          <td style="font-weight:500">${pi.name}</td>
+          ${dayColsHtml}
+          <td style="text-align:right;color:var(--text3);border-left:1px solid var(--border)">${Math.round(overallHistSum)}</td>
+          <td style="text-align:right;padding:3px 5px">
+            <input type="number" value="${mult}" style="width:55px;padding:3px;text-align:right;font-size:12px" 
+              oninput="updateItemMultiplier('${pi.name}',this.value)"/>
+          </td>
+          <td style="text-align:right;font-weight:600;font-size:13px;color:var(--purp)">${overallFinalSum}</td>
+        </tr>
+      `;
+    });
+  }
+  
+  html += '</tbody></table>';
+  container.innerHTML = html;
 }
 
-function onItemMultChange(name, input){
-  const val=input.value.trim();
-  if(val===''||isNaN(parseFloat(val))){
-    delete cfg.item_multipliers[name];
-    input.style.opacity='.6'; input.style.borderColor='';
-  } else {
-    cfg.item_multipliers[name]=parseFloat(val);
-    input.style.opacity='1'; input.style.borderColor='var(--info)';
-  }
+async function updateItemMultiplier(name, val){
+  const num = parseInt(val);
+  if(isNaN(num)) return;
+  cfg.item_multipliers[name] = num;
+  renderBaselineTable();
+  
   clearTimeout(window._multTimer);
-  window._multTimer=setTimeout(()=>saveConfigField('item_multipliers',cfg.item_multipliers),800);
-  renderBaselineTable();
+  window._multTimer = setTimeout(async ()=>{
+    await sb.from('bakery_config').update({
+      item_multipliers: cfg.item_multipliers,
+      updated_at: new Date().toISOString()
+    }).eq('id','main');
+  }, 1000);
 }
 
-function clearItemMult(name){
-  delete cfg.item_multipliers[name];
-  saveConfigField('item_multipliers',cfg.item_multipliers);
-  renderBaselineTable();
+function resetFetch(){
+  document.getElementById('gen-review-wrap').style.display='none';
+  document.getElementById('fetch-btn').disabled = false;
+  setStatus('gen-status','Ready to fetch fresh analytics window framework.','info');
 }
 
-async function generate(debugMode=false){
-  if(debugMode){
-    // Debug: pull last Tuesday Redmond
-    const tok=token();
-    if(!tok){setStatus('gen-status','Add your Square token.','err');return;}
-    const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
-    if(!locRed){setStatus('gen-status','Add Redmond location ID.','err');return;}
-    setStatus('gen-status','<span class="spin"></span> Fetching debug data…','info');
-    const tues=getLastNWeekdays(2,1)[0]; // last Tuesday
-    const end=new Date(tues); end.setDate(end.getDate()+1);
-    try{
-      const orders=await fetchOrders(locRed,pacificMidnightISO(tues),pacificMidnightISO(end));
-      const{counts}=aggregateOrders(orders);
-      const lines=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([n,q])=>`${q.toString().padStart(4)}  ${n}`);
-      document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME\n'+'─'.repeat(60)+'\n'+lines.join('\n'):'No orders found.';
-      document.getElementById('debug-wrap').style.display='block';
-      setStatus('gen-status','Debug complete.','ok');
-    }catch(e){setStatus('gen-status','Error: '+e.message,'err');}
-    return;
-  }
-}
-
-async function debugOos(){
-  const tok=token();
-  if(!tok){setStatus('gen-status','Add your Square token.','err');return;}
-  const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
-  if(!locRed){setStatus('gen-status','Add Redmond location ID.','err');return;}
-
-  const areaEl=document.getElementById('debug-oos-area');
-  const wrapEl=document.getElementById('debug-oos-wrap');
-  const varIds=Object.values(cfg.catalog_variations);
-
-  if(!varIds.length){
-    areaEl.textContent='No variation IDs found. Run "Sync from Square" in the Catalog tab first, then re-fetch.';
-    wrapEl.style.display='block';
-    return;
-  }
-
-  setStatus('gen-status','<span class="spin"></span> Fetching raw OOS data…','info');
-  const tues=getLastNWeekdays(2,1)[0];
-  const dayStart=new Date(tues); dayStart.setHours(0,0,0,0);
-  const dayEnd=new Date(tues); dayEnd.setHours(23,59,59,999);
-
-  const chunk=varIds.slice(0,10);
-  const lines=[];
-  lines.push(`Checking: ${dayStart.toDateString()} at ${LOC_LABEL['Red']||locRed}`);
-  lines.push(`Variation IDs sampled: ${chunk.length} of ${varIds.length} total`);
-  lines.push('');
-
-  try{
-    const r=await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'),{method:'POST',headers:sqH(),body:JSON.stringify({catalog_object_ids:chunk,location_ids:[locRed]})});
-    const d=await r.json();
-    lines.push('HTTP status: '+r.status);
-    if(d.errors){
-      for(const e of d.errors) lines.push('ERROR: '+e.category+'/'+e.code+': '+e.detail);
-    } else {
-      const all=d.changes||[];
-      const dayChanges=all.filter(c=>{
-        const ts=c.adjustment?.occurred_at||c.adjustment?.created_at;
-        if(!ts) return false;
-        const t=new Date(ts);
-        return t>=dayStart && t<=dayEnd;
-      });
-      lines.push(`All-time changes for these items: ${all.length}`);
-      lines.push(`Changes on this day: ${dayChanges.length}`);
-      lines.push(`to_states seen (all time): ${[...new Set(all.map(c=>c.adjustment?.to_state).filter(Boolean))].join(', ')}`);
-      lines.push('');
-      if(dayChanges.length){
-        lines.push('Day changes:');
-        for(const c of dayChanges){
-          const adj=c.adjustment||{};
-          lines.push(`  ${adj.occurred_at||adj.created_at}  ${adj.from_state} → ${adj.to_state}  item=${adj.catalog_object_id}`);
-        }
-      } else {
-        lines.push('No changes on this day. Recent changes (last 5):');
-        for(const c of all.slice(-5)){
-          const adj=c.adjustment||{};
-          lines.push(`  ${adj.occurred_at||adj.created_at}  ${adj.from_state} → ${adj.to_state}  item=${adj.catalog_object_id}`);
-        }
-      }
-    }
-  } catch(e){ lines.push('Fetch error: '+e.message); }
-
-  areaEl.textContent=lines.join('\n');
-  wrapEl.style.display='block';
-}
-
-async function debugItemOos(){
-  const itemName = document.getElementById('debug-item-name').value.trim();
-  if(!itemName){ alert('Enter an item name first.'); return; }
-  if(!token()){ setStatus('gen-status','Add your Square token.','err'); return; }
-
-  const varId = cfg.catalog_variations[itemName];
-  const areaEl = document.getElementById('debug-oos-area');
-  const wrapEl = document.getElementById('debug-oos-wrap');
-
-  if(!varId){
-    // Try case-insensitive match
-    const match = Object.keys(cfg.catalog_variations).find(k=>k.toLowerCase().includes(itemName.toLowerCase()));
-    if(!match){
-      areaEl.textContent = `"${itemName}" not found in catalog variations.\n\nRun "Sync from Square" in the Catalog tab first, then try again.\n\nKnown items containing that text: (none)\n\nAll known items:\n`+Object.keys(cfg.catalog_variations).sort().join('\n');
-      wrapEl.style.display='block'; return;
-    }
-    document.getElementById('debug-item-name').value = match;
-    return debugItemOos();
-  }
-
-  setStatus('gen-status',`<span class="spin"></span> Fetching all history for "${itemName}"…`,'info');
-
-  const locMap = {
-    Redmond: document.getElementById('loc-red').value.trim()||cfg.loc_red,
-    Bellevue: document.getElementById('loc-bel').value.trim()||cfg.loc_bel,
-    Woodinville: document.getElementById('loc-wood').value.trim()||cfg.loc_wood,
-  };
-
-  const lines = [];
-  lines.push(`Item: ${itemName}`);
-  lines.push(`Variation ID: ${varId}`);
-  lines.push('');
-
-  for(const [locName, locId] of Object.entries(locMap)){
-    if(!locId){ lines.push(`${locName}: no location ID configured`); lines.push(''); continue; }
-    lines.push(`=== ${locName} (${locId}) ===`);
-    try{
-      const r = await fetch(sqUrl('/v2/inventory/batch-retrieve-changes'),{method:'POST',headers:sqH(),body:JSON.stringify({catalog_object_ids:[varId],location_ids:[locId]})});
-      const d = await r.json();
-      if(d.errors){ for(const e of d.errors) lines.push('  ERROR: '+e.detail); }
-      else {
-        const changes = d.changes||[];
-        lines.push(`Total changes ever: ${changes.length}`);
-        if(!changes.length){
-          lines.push('  (no inventory changes recorded for this item at this location)');
-        } else {
-          lines.push('');
-          lines.push('  timestamp (local)            from → to         source');
-          lines.push('  '+'-'.repeat(70));
-          for(const c of changes.sort((a,b)=>{
-            const ta=a.adjustment?.occurred_at||''; const tb=b.adjustment?.occurred_at||'';
-            return ta.localeCompare(tb);
-          })){
-            const adj = c.adjustment||c.physical_count||{};
-            const ts = adj.occurred_at||adj.created_at||'?';
-            const localTime = ts==='?' ? '?' : new Date(ts).toLocaleString();
-            const from = adj.from_state||'?';
-            const to = adj.to_state||adj.state||'?';
-            const source = adj.source?.name||adj.team_member_id||'?';
-            const qty = adj.quantity ? ` (qty ${adj.quantity})` : '';
-            lines.push(`  ${localTime.padEnd(28)} ${(from+' → '+to).padEnd(24)} ${source}${qty}`);
-          }
-        }
-      }
-    } catch(e){ lines.push('  Fetch error: '+e.message); }
-    lines.push('');
-  }
-
-  lines.push('--- What to look for ---');
-  lines.push('An 86 (manual mark out of stock) should appear as a state change around the time');
-  lines.push('you know the item sold out. Compare timestamps against what you saw in Square.');
-  lines.push('The from/to states will tell us exactly what to filter for in the main OOS logic.');
-
-  areaEl.textContent = lines.join('\n');
-  wrapEl.style.display = 'block';
-  setStatus('gen-status','Item history loaded — check debug output below.','ok');
-}
-
+// ── COPY TO CLIPBOARD (EXCEL GENERATOR MATRIX) ────────────
 function copyOut(){
-  if(!Object.keys(baselineData).length){
-    setStatus('out-status','Fetch data first (Step 1).','err'); return;
+  const projDir = document.getElementById('proj-direction').value;
+  if(!projDir){
+    setStatus('out-status','Please set the Step 2 projection direction first.','err');
+    return;
   }
-  const dir=document.getElementById('proj-direction').value;
-  if(!dir){
-    setStatus('out-status','Set a projection first (Step 2).','err'); return;
-  }
-
-  const DAY_COLS=[
-    {r:'B',b:'C',w:'D',t:'E'},{r:'F',b:'G',w:'H',t:'I'},{r:'J',b:'K',w:'L',t:'M'},
-    {r:'N',b:'O',w:'P',t:'Q'},{r:'R',b:'S',w:'T',t:'U'},{r:'V',b:'W',w:'X',t:'Y'},
-    {r:'Z',b:'AA',w:'AB',t:'AC'}
-  ];
-
-  const retailItems=cfg.prod_items.filter(p=>p.sec==='retail');
-  const kitchenItems=cfg.prod_items.filter(p=>p.sec==='kitchen');
-  const retailStartRow=2;
-  const kitchenStartRow=retailStartRow+retailItems.length+1;
-
-  const header='Item:	'+DAYS.flatMap(d=>[`Red ${d}`,`Bel ${d}`,`Wood ${d}`,d]).join('	')+'		Total:	Bellevue Total:	Woodinville Total:	Redmond Total:';
-
-  const buildRows=(items,startRow)=>items.map((pi,idx)=>{
-    const row=startRow+idx;
-    const cells=[];
-    for(let di=0;di<DAYS.length;di++){
-      const day=DAYS[di]; const dc=DAY_COLS[di];
-      cells.push(
-        getFinalQty(pi.name,day,'Red'),
-        getFinalQty(pi.name,day,'Bel'),
-        getFinalQty(pi.name,day,'Wood'),
-        `=`+dc.r+row+`+`+dc.b+row+`+`+dc.w+row
-      );
+  
+  const projPct = parseFloat(document.getElementById('proj-pct').value)||0;
+  let rows = [];
+  
+  const retailSec = cfg.prod_items.filter(pi=>pi.sec==='retail').sort((a,b)=>{
+    let ia = RETAIL_ORDER.indexOf(a.name), ib = RETAIL_ORDER.indexOf(b.name);
+    return (ia===-1?999:ia) - (ib===-1?999:ib);
+  });
+  
+  retailSec.forEach(pi=>{
+    let mult = cfg.item_multipliers[pi.name] ?? 100;
+    let dayTokens = [];
+    for(let d=0;d<7;d++){
+      const day = DAYS[d];
+      let rowTotal = 0;
+      for(const loc of LOCS){
+        let cell = baselineData[pi.name]?.[day]?.[loc] || 0;
+        if(projDir==='increase') cell *= (1 + projPct/100);
+        else if(projDir==='drop') cell *= (1 - projPct/100);
+        
+        dayLocAdjs.forEach(adj=>{
+          if(adj.day===day && (adj.loc==='all' || adj.loc===loc)){
+            if(adj.dir==='increase') cell *= (1 + adj.pct/100);
+            else if(adj.dir==='drop') cell *= (1 - adj.pct/100);
+          }
+        });
+        cell *= (mult/100);
+        rowTotal += Math.ceil(cell);
+      }
+      dayTokens.push(rowTotal);
     }
-    const r=row;
-    cells.push(
-      '',
-      `=E${r}+I${r}+M${r}+Q${r}+U${r}+Y${r}+AC${r}`,
-      `=C${r}+G${r}+K${r}+O${r}+S${r}+W${r}+AA${r}`,
-      `=D${r}+H${r}+L${r}+P${r}+T${r}+X${r}+AB${r}`,
-      `=B${r}+F${r}+J${r}+N${r}+R${r}+V${r}+Z${r}`
-    );
-    return pi.name+'\t'+cells.join('\t');
-  }).join('\n');
-
-  const output=[header,buildRows(retailItems,retailStartRow),'Kitchen:',buildRows(kitchenItems,kitchenStartRow),header].join('\n');
-  navigator.clipboard.writeText(output).then(()=>{
-    setStatus('out-status','Copied! Paste into Excel starting at cell A1 (or A2 if row 1 has headers).','ok');
+    rows.push(dayTokens.join('\t'));
+  });
+  
+  rows.push(''); 
+  
+  const kitchenSec = cfg.prod_items.filter(pi=>pi.sec==='kitchen').sort((a,b)=>{
+    let ia = KITCHEN_ORDER.indexOf(a.name), ib = KITCHEN_ORDER.indexOf(b.name);
+    return (ia===-1?999:ia) - (ib===-1?999:ib);
+  });
+  
+  kitchenSec.forEach(pi=>{
+    let mult = cfg.item_multipliers[pi.name] ?? 100;
+    let dayTokens = [];
+    for(let d=0;d<7;d++){
+      const day = DAYS[d];
+      let rowTotal = 0;
+      for(const loc of LOCS){
+        let cell = baselineData[pi.name]?.[day]?.[loc] || 0;
+        if(projDir==='increase') cell *= (1 + projPct/100);
+        else if(projDir==='drop') cell *= (1 - projPct/100);
+        
+        dayLocAdjs.forEach(adj=>{
+          if(adj.day===day && (adj.loc==='all' || adj.loc===loc)){
+            if(adj.dir==='increase') cell *= (1 + adj.pct/100);
+            else if(adj.dir==='drop') cell *= (1 - adj.pct/100);
+          }
+        });
+        cell *= (mult/100);
+        rowTotal += Math.ceil(cell);
+      }
+      dayTokens.push(rowTotal);
+    }
+    rows.push(dayTokens.join('\t'));
+  });
+  
+  const clipStr = rows.join('\n');
+  navigator.clipboard.writeText(clipStr).then(()=>{
+    setStatus('out-status','Copied matrix values successfully! Paste straight into cell B2 inside your production sheet.','ok');
   }).catch(()=>{
-    setStatus('out-status','Copy failed — select all and copy manually.','err');
+    setStatus('out-status','Copy failed — select all text and populate clipboard logs manually.','err');
   });
 }
 
-// ── IMPORT SETTINGS ──────────────────────────────────────
+// ── VERIFY TAB VIEWS ──────────────────────────────────────
+function renderVerifyTable(){
+  const dow = document.getElementById('verify-dow').value;
+  const week = document.getElementById('verify-week').value;
+  const sort = document.getElementById('verify-sort').value;
+  const container = document.getElementById('verify-table');
+  
+  const dateLabel = document.getElementById('verify-date-label');
+  if(salesByDowDates[dow]?.[week]){
+    dateLabel.textContent = `Target processing date segment: ${salesByDowDates[dow][week]}`;
+  } else {
+    dateLabel.textContent = '';
+  }
+  
+  if(!salesByDowGlobal[dow]?.[week]){
+    container.innerHTML = '<div class="empty">No analytics context found. Run baseline calculations on the Generate tab first.</div>';
+    return;
+  }
+  
+  const dataset = salesByDowGlobal[dow][week];
+  const itemsMap = {};
+  
+  for(const loc of LOCS){
+    const counts = dataset[loc]?.counts || {};
+    for(const item in counts){
+      if(!itemsMap[item]) itemsMap[item] = { name:item, Red:0, Bel:0, Wood:0, total:0 };
+      itemsMap[item][loc] = counts[item];
+      itemsMap[item].total += counts[item];
+    }
+  }
+  
+  const list = Object.values(itemsMap);
+  if(!list.length){
+    container.innerHTML = '<div class="empty">No item sales records found for this operational timeframe.</div>';
+    return;
+  }
+  
+  list.sort((a,b)=>{
+    if(sort==='name') return a.name.localeCompare(b.name);
+    if(sort==='red') return b.Red - a.Red;
+    if(sort==='bel') return b.Bel - a.Bel;
+    if(sort==='wood') return b.Wood - a.Wood;
+    return b.total - a.total;
+  });
+  
+  let html = `
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Square Item Name (with Variation)</th>
+          <style="text-align:right">Redmond</th>
+          <style="text-align:right">Bellevue</th>
+          <style="text-align:right">Woodinville</th>
+          <style="text-align:right;font-weight:600">Total Sum</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  list.forEach(row=>{
+    html += `
+      <tr>
+        <td style="font-family:monospace;font-size:11px">${row.name}</td>
+        <td style="text-align:right;color:var(--text2)">${row.Red||'-'}</td>
+        <td style="text-align:right;color:var(--text2)">${row.Bel||'-'}</td>
+        <td style="text-align:right;color:var(--text2)">${row.Wood||'-'}</td>
+        <td style="text-align:right;font-weight:600">${row.total}</td>
+      </tr>
+    `;
+  });
+  
+  container.innerHTML = html + '</tbody></table>';
+}
+
+// ── PRODUCTION CONFIG EDITOR ──────────────────────────────
+function renderProdItems(){
+  const container = document.getElementById('prod-items-list');
+  if(!cfg.prod_items.length){
+    container.innerHTML = '<div class="empty">No production units configured yet.</div>';
+    return;
+  }
+  let html = '<table class="tbl"><thead><tr><th>Name</th><th>Section</th><th>OOS Cutoff</th><th style="width:40px"></th></tr></thead><tbody>';
+  cfg.prod_items.forEach((pi,idx)=>{
+    html += `
+      <tr>
+        <td style="font-weight:500">${pi.name}</td>
+        <td><span class="badge ${pi.sec==='kitchen'?'bpurp':'bok'}">${pi.sec}</span></td>
+        <td><span class="badge binfo">${pi.cutoff||'14:00'}</span></td>
+        <td><button class="btn btnsm" style="border-color:var(--err);color:var(--err);padding:2px 6px" onclick="deleteProdItem(${idx})">×</button></td>
+      </tr>
+    `;
+  });
+  container.innerHTML = html + '</tbody></table>';
+}
+
+async function addProdItem(){
+  const name = document.getElementById('new-prod').value.trim();
+  const sec = document.getElementById('new-prod-sec').value;
+  const cutoff = document.getElementById('new-prod-cutoff').value;
+  if(!name) return;
+  if(cfg.prod_items.some(p=>p.name.toLowerCase()===name.toLowerCase())){
+    alert('This product name layout already exists.');
+    return;
+  }
+  cfg.prod_items.push({name, sec, cutoff});
+  cfg.prod_items.sort((a,b)=>a.name.localeCompare(b.name));
+  document.getElementById('new-prod').value = '';
+  renderProdItems();
+  updateRelProdSelect();
+  await sb.from('bakery_config').update({prod_items:cfg.prod_items, updated_at:new Date().toISOString()}).eq('id','main');
+}
+
+async function deleteProdItem(idx){
+  if(!confirm('Delete this line item entry? Relationships pointing to it will break.')) return;
+  cfg.prod_items.splice(idx,1);
+  renderProdItems();
+  updateRelProdSelect();
+  await sb.from('bakery_config').update({prod_items:cfg.prod_items, updated_at:new Date().toISOString()}).eq('id','main');
+}
+
+// ── RELATIONSHIPS EDITOR ──────────────────────────────────
+function renderRels(){
+  const container = document.getElementById('rel-list');
+  if(!cfg.rels.length){
+    container.innerHTML = '<div class="empty">No menu layout conversion definitions saved yet.</div>';
+    return;
+  }
+  let html = '<table class="tbl"><thead><tr><th>Menu Item (Square)</th><th>Uses Qty</th><th>Of Production Line</th><th style="width:40px"></th></tr></thead><tbody>';
+  cfg.rels.forEach((r,idx)=>{
+    html += `
+      <tr>
+        <td style="font-family:monospace;font-size:11px">${r.menu}</td>
+        <td style="font-weight:600;color:var(--info)">${r.qty}</td>
+        <td style="font-weight:500">${r.prod}</td>
+        <td><button class="btn btnsm" style="border-color:var(--err);color:var(--err);padding:2px 6px" onclick="deleteRel(${idx})">×</button></td>
+      </tr>
+    `;
+  });
+  container.innerHTML = html + '</tbody></table>';
+}
+
+function updateRelProdSelect(){
+  const select = document.getElementById('rel-prod');
+  if(!select) return;
+  let html = '<option value="">— select —</option>';
+  cfg.prod_items.forEach(p=>{
+    html += `<option value="${p.name}">${p.name}</option>`;
+  });
+  select.innerHTML = html;
+}
+
+function filterSuggestions(val){
+  const box = document.getElementById('rel-suggestions');
+  if(!val.trim()){ box.style.display='none'; return; }
+  const match = cfg.catalog.filter(c=>c.toLowerCase().includes(val.toLowerCase())).slice(0,8);
+  if(!match.length){ box.style.display='none'; return; }
+  box.innerHTML = `
+    <div class="suggest-box">
+      ${match.map(m=>`<div class="suggest-item" onclick="selectSuggestion('${m.replace(/'/g,"\\'")}')">${m}</div>`).join('')}
+    </div>
+  `;
+  box.style.display='block';
+}
+
+function selectSuggestion(val){
+  document.getElementById('rel-menu').value = val;
+  hideSuggestions();
+}
+
+function hideSuggestions(){
+  document.getElementById('rel-suggestions').style.display='none';
+}
+
+async function addRel(){
+  const menu = document.getElementById('rel-menu').value.trim();
+  const qty = parseFloat(document.getElementById('rel-qty').value);
+  const prod = document.getElementById('rel-prod').value;
+  if(!menu||isNaN(qty)||qty<=0||!prod) return;
+  cfg.rels.push({menu, qty, prod});
+  document.getElementById('rel-menu').value = '';
+  document.getElementById('rel-qty').value = '';
+  document.getElementById('rel-prod').value = '';
+  renderRels();
+  await sb.from('bakery_config').update({rels:cfg.rels, updated_at:new Date().toISOString()}).eq('id','main');
+}
+
+async function deleteRel(idx){
+  cfg.rels.splice(idx,1);
+  renderRels();
+  await sb.from('bakery_config').update({rels:cfg.rels, updated_at:new Date().toISOString()}).eq('id','main');
+}
+
+function renderCatalogGrid(){
+  const grid = document.getElementById('catalog-grid');
+  if(!cfg.catalog.length){ grid.style.display='none'; return; }
+  grid.innerHTML = cfg.catalog.map(c=>`<div class="cat-item" title="${c}">${c}</div>`).join('');
+  grid.style.display='grid';
+}
+
+// ── MANUAL OOS TAB AND OVERRIDES ──────────────────────────
+function renderOosDays(){
+  const container = document.getElementById('oos-days');
+  container.innerHTML = DAYS.map(d=>`<button class="dtab ${curOosDay===d?'active':''}" onclick="setOosDay('${d}')">${d}</button>`).join('');
+}
+function setOosDay(d){ curOosDay=d; renderOosDays(); renderAutoOosList(); renderOosList(); }
+
+function renderOosLocs(){
+  const container = document.getElementById('oos-locs');
+  container.innerHTML = LOCS.map(l=>`<button class="ltab ${curOosLoc===l?'active':''}" onclick="setOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join('');
+}
+function setOosLoc(l){ curOosLoc=l; renderOosLocs(); renderAutoOosList(); renderOosList(); }
+
+function renderAutoOosList(){
+  const container = document.getElementById('auto-oos-list');
+  const key = curOosDay+'|'+curOosLoc;
+  const items = autoOosData[key];
+  if(!items || !Object.keys(items).length){
+    container.innerHTML = '<div style="font-size:12px;color:var(--text3)">No automated stock events indexed.</div>';
+    return;
+  }
+  let html = '<div style="display:flex;flex-direction:column;gap:5px">';
+  for(const item in items){
+    const time = items[item];
+    const detail = oosMissedSalesDetail[key]?.[item] || 0;
+    const addedText = detail > 0 ? ` (+${detail.toFixed(1)} estimated units missed)` : ' (After cutoff — no adjustments applied)';
+    html += `<div style="font-size:12px"><span class="badge bpurp">${time}</span> <strong>${item}</strong>${addedText}</div>`;
+  }
+  container.innerHTML = html + '</div>';
+}
+
+function renderOosList(){
+  const container = document.getElementById('oos-list');
+  const key = curOosDay+'|'+curOosLoc;
+  const list = oosData[key]||[];
+  if(!list.length){
+    container.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0">No manual overrides for this cell window.</div>';
+    return;
+  }
+  let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+  list.forEach((entry,idx)=>{
+    html += `
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="text" value="${entry.name}" style="flex:1;padding:4px 8px" onchange="updateOosEntry('${key}',${idx},'name',this.value)"/>
+        <input type="time" value="${entry.time}" style="width:100px;padding:4px 8px" onchange="updateOosEntry('${key}',${idx},'time',this.value)"/>
+        <button class="btn btnsm" style="border-color:var(--err);color:var(--err)" onclick="deleteOosEntry('${key}',${idx})">Delete</button>
+      </div>
+    `;
+  });
+  container.innerHTML = html + '</div>';
+}
+
+async function addOosEntry(){
+  const key = curOosDay+'|'+curOosLoc;
+  if(!oosData[key]) oosData[key]=[];
+  const newRow = { name:'', time:'11:00' };
+  oosData[key].push(newRow);
+  renderOosList();
+  
+  const { data, error } = await sb.from('bakery_oos').insert({
+    week_start: document.getElementById('week-start').value,
+    day_name: curOosDay,
+    loc_key: curOosLoc,
+    item_name: '',
+    sold_out_time: '11:00',
+    created_by: currentUser.id
+  }).select();
+  if(!error && data?.[0]) newRow.id = data[0].id;
+}
+
+async function updateOosEntry(key, idx, field, val){
+  const entry = oosData[key][idx];
+  entry[field] = val;
+  if(entry.id){
+    const dbField = field==='name'?'item_name':'sold_out_time';
+    await sb.from('bakery_oos').update({[dbField]:val}).eq('id', entry.id);
+  }
+}
+
+async function deleteOosEntry(key, idx){
+  const entry = oosData[key][idx];
+  oosData[key].splice(idx,1);
+  renderOosList();
+  if(entry.id) await sb.from('bakery_oos').delete().eq('id', entry.id);
+}
+
+async function reloadOosWeek(){
+  const weekStart = document.getElementById('week-start').value;
+  setStatus('gen-status','Loading targeted overrides...','info');
+  const { data } = await sb.from('bakery_oos').select('*').eq('week_start', weekStart);
+  oosData = {};
+  for(const row of data||[]){
+    const key = row.day_name+'|'+row.loc_key;
+    if(!oosData[key]) oosData[key]=[];
+    oosData[key].push({name:row.item_name, time:row.sold_out_time, id:row.id});
+  }
+  renderOosList();
+  setStatus('gen-status','Overrides mapped.','ok');
+}
+
+// ── UTILITIES ─────────────────────────────────────────────
+function setStatus(id, msg, type){
+  const el = document.getElementById(id);
+  if(!el) return;
+  if(!msg){ el.style.display='none'; return; }
+  el.className = 'status s'+type;
+  el.innerHTML = msg;
+  el.style.display='block';
+}
+
+function showTab(name, btn){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='verify') renderVerifyTable();
+}
+
+async function testConn(){
+  const tok = token();
+  if(!tok){setStatus('api-status','Please supply an access token first.','err');return;}
+  setStatus('api-status','<span class="spin"></span> Contacting proxy gateway network...','info');
+  try{
+    const res = await fetch(sqUrl('/v2/locations'), { headers:{ 'Authorization':'Bearer '+tok, 'Square-Version':SQ_VER } });
+    const d = await res.json();
+    if(d.errors) throw new Error(d.errors[0].detail);
+    setStatus('api-status','Connected! Server confirmed '+d.locations.length+' active location parameters.','ok');
+  }catch(e){
+    setStatus('api-status','Connection failed: '+e.message,'err');
+  }
+}
+
+// ── IMPORT OLD JSON BACKUPS ───────────────────────────────
 async function importSettings(input) {
   const file = input.files[0];
   if(!file) return;
@@ -1960,14 +1441,14 @@ async function importSettings(input) {
   reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result);
-      if(!data.version && !data.prod_items && !data.rels) throw new Error('Unrecognised file format');
+      if(!data.version && !data.prod_items && !data.rels) throw new Error('Unrecognised file format configuration parameters.');
       const update = {};
-      if(data.catalog)       update.catalog = data.catalog;
+      if(data.catalog) update.catalog = data.catalog;
       if(data.prodItems || data.prod_items) update.prod_items = (data.prodItems||data.prod_items);
-      if(data.rels)          update.rels = data.rels;
+      if(data.rels) update.rels = data.rels;
       if(data.proxyUrl || data.proxy_url) update.proxy_url = data.proxyUrl||data.proxy_url;
       if(data.kitchenBuffer !== undefined) update.kitchen_buffer = parseFloat(data.kitchenBuffer)||5;
-      // Push to Supabase
+      
       await sb.from('bakery_config').update({
         ...update,
         updated_at: new Date().toISOString(),
@@ -1981,11 +1462,10 @@ async function importSettings(input) {
     }
   };
   reader.readAsText(file);
-  input.value='';
 }
 
-// ── BOOT ─────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', init);
+// ── INITIALIZE ENTRYPOINT ─────────────────────────────────
+init();
 </script>
 </body>
 </html>
