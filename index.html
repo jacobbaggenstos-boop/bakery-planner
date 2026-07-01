@@ -570,7 +570,7 @@ async function syncCatalog(){
 }
 
 // ── REWRITTEN FETCH DATA VIA REPORTING API ────────────────
-// ── OPTIMIZED PARALLEL FETCH DATA VIA REPORTING API ────────────────
+// ── OPTIMIZED SEQUENTIAL FETCH DATA VIA REPORTING API ────────────────
 async function fetchData() {
   const tok = token();
   if (!tok) {
@@ -587,20 +587,20 @@ async function fetchData() {
     return;
   }
 
-  setStatus('gen-status', '<span class="spin"></span> Querying Square Reporting API in parallel chunks...', 'info');
+  setStatus('gen-status', '<span class="spin"></span> Initializing multi-week sequence...', 'info');
   document.getElementById('fetch-btn').disabled = true;
 
   const locationIds = [locRed, locBel, locWood].filter(Boolean);
   const today = new Date();
 
-  // Reset global structures
+  // Reset global mapping structures
   salesByDowGlobal = {};
   salesByDowDates = {};
   for (let dow = 0; dow < 7; dow++) {
     salesByDowGlobal[dow] = Array.from({ length: 3 }, () => ({ Red: { counts: {} }, Bel: { counts: {} }, Wood: { counts: {} } }));
   }
 
-  // Define 3 separate, distinct week ranges to avoid hitting serverless/Val Town limits
+  // Create explicit isolated 7-day windows
   const weekRanges = [];
   for (let weekOffset = 1; weekOffset <= 3; weekOffset++) {
     const datesInWeek = [];
@@ -621,11 +621,13 @@ async function fetchData() {
   }
 
   try {
-    // Fire all three separate week requests simultaneously!
-    const fetchPromises = weekRanges.map(async (range) => {
+    // Process each week one after the other to preserve Val Town & Square stability
+    for (const range of weekRanges) {
       let isProcessing = true;
       let attempts = 0;
       let weekData = null;
+
+      setStatus('gen-status', `<span class="spin"></span> Querying Week ${range.slot + 1}/3 (${range.start} to ${range.end})...`, 'info');
 
       const payload = {
         query: {
@@ -647,7 +649,7 @@ async function fetchData() {
         }
       };
 
-      while (isProcessing && attempts < 30) {
+      while (isProcessing && attempts < 40) {
         attempts++;
         const response = await fetch(sqUrl('/reporting/v1/load'), {
           method: 'POST',
@@ -663,25 +665,21 @@ async function fetchData() {
         if (resJson.errors) throw new Error(resJson.errors[0].detail);
 
         if (resJson.error === "Continue wait" || resJson.status === "PROCESSING" || (!resJson.data && !resJson.rows && !Array.isArray(resJson))) {
-          await new Promise(resolve => setTimeout(resolve, 2500)); 
+          setStatus('gen-status', `<span class="spin"></span> Week ${range.slot + 1}/3 — Waiting for Square engine (Attempt ${attempts})...`, 'info');
+          // 4-second rest interval gives Square's query compiler breathing room
+          await new Promise(resolve => setTimeout(resolve, 4000)); 
         } else {
           weekData = resJson.data || resJson.rows || (Array.isArray(resJson) ? resJson : null);
           isProcessing = false;
         }
       }
       
-      if (!weekData) throw new Error(`Timeout parsing week chunk range: ${range.start} to ${range.end}`);
-      return { slot: range.slot, data: weekData, allDates: range.allDates };
-    });
+      if (!weekData) {
+        throw new Error(`Square reporting engine timed out processing range: ${range.start} to ${range.end}`);
+      }
 
-    // Wait for all 3 threads to safely respond 
-    const completedWeeks = await Promise.all(fetchPromises);
-
-    // Map the combined chunk data back to our layout matrix
-    completedWeeks.forEach(weekResult => {
-      const weekSlot = weekResult.slot;
-      
-      weekResult.data.forEach(row => {
+      // Map this week's data segment into our global matrix
+      weekData.forEach(row => {
         const itemName = row["ItemSales.item_name"] || row[0];
         const variationName = row["ItemSales.item_variation_name"] || row[1];
         const rowLocId = row["ItemSales.location_id"] || row[2];
@@ -702,21 +700,21 @@ async function fetchData() {
         const dowIndex = (dateObj.getDay() + 5) % 7; 
 
         if (!salesByDowDates[dowIndex]) salesByDowDates[dowIndex] = [];
-        salesByDowDates[dowIndex][weekSlot] = rowDate;
+        salesByDowDates[dowIndex][range.slot] = rowDate;
 
-        const countsRef = salesByDowGlobal[dowIndex][weekSlot][locKey].counts;
+        const countsRef = salesByDowGlobal[dowIndex][range.slot][locKey].counts;
         countsRef[fullName] = (countsRef[fullName] || 0) + qtySold;
       });
-    });
+    }
 
+    // All weeks completed successfully
     calculateBaselinesFromReporting();
 
   } catch (e) {
     setStatus('gen-status', 'API/Proxy Limit Error: ' + e.message, 'err');
     document.getElementById('fetch-btn').disabled = false;
   }
-}
-// ── COMPUTE RE-MAPPED BASELINES ───────────────────────────
+}// ── COMPUTE RE-MAPPED BASELINES ───────────────────────────
 function calculateBaselinesFromReporting() {
   setStatus('gen-status', '<span class="spin"></span> Calculating baseline averages...', 'info');
   
