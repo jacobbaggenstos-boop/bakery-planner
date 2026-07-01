@@ -1264,28 +1264,36 @@ async function fetchData() {
     let isProcessing = true;
     let attempts = 0;
 
-    const payload = {
-      query: {
-        measures: ["ItemSales.quantity_sold"],
-        dimensions: [
-          "ItemSales.item_name",
-          "ItemSales.item_variation_name",
-          "ItemSales.location_id",
-          "ItemSales.local_reporting_date" // Grouping directly by date
-        ],
-        filters: [
-          {
-            dimension: "ItemSales.location_id",
-            operator: "IN",
-            values: locationIds
-          }
-        ],
-        timeDimensions: [{
-          dimension: "ItemSales.local_reporting_timestamp",
-          dateRange: [startDate, endDate]
-        }]
+    // Locate this inside your rewritten fetchData() function:
+const payload = {
+  query: {
+    measures: ["ItemSales.quantity_sold"],
+    dimensions: [
+      "ItemSales.item_name",
+      "ItemSales.item_variation_name",
+      "ItemSales.location_id",
+      "ItemSales.local_reporting_date"
+    ],
+    filters: [
+      {
+        dimension: "ItemSales.location_id",
+        operator: "IN",
+        values: locationIds
+      },
+      // ADD THIS STRICT DATE FILTER:
+      {
+        dimension: "ItemSales.local_reporting_date",
+        operator: "BETWEEN",
+        values: [startDate, endDate]
       }
-    };
+    ],
+    // CHANGE THIS TIME DIMENSION RANGE WINDOW:
+    timeDimensions: [{
+      dimension: "ItemSales.local_reporting_date",
+      dateRange: [startDate, endDate]
+    }]
+  }
+};
 
     while (isProcessing && attempts < 15) {
       attempts++;
@@ -1306,9 +1314,12 @@ async function fetchData() {
       }
 
       // Check if report computation needs polling time
-      if (resJson.error === "Continue wait" || resJson.status === "PROCESSING") {
-        setStatus('gen-status', `<span class="spin"></span> Processing report data (Attempt ${attempts})...`, 'info');
-        await new Promise(resolve => setTimeout(resolve, Math.min(1000 * attempts, 5000))); // Exponential backoff
+      // Locate this inside your while(isProcessing) loop:
+if (resJson.error === "Continue wait" || resJson.status === "PROCESSING") {
+  setStatus('gen-status', `<span class="spin"></span> Processing report data (Attempt ${attempts})...`, 'info');
+  // Change this timeout value line:
+  await new Promise(resolve => setTimeout(resolve, 3000)); 
+}
       } else {
         reportingData = resJson.data || resJson.rows; // Depends on your Proxy configuration architecture
         isProcessing = false;
