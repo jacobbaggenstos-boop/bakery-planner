@@ -570,7 +570,7 @@ async function syncCatalog(){
 }
 
 // ── REWRITTEN FETCH DATA VIA REPORTING API ────────────────
-// ── OPTIMIZED DAY-BY-DAY REPORTING API FETCH ────────────────
+// ── RESILIENT DAY-BY-DAY REPORTING API FETCH ────────────────
 async function fetchData() {
   const tok = token();
   if (!tok) {
@@ -593,7 +593,6 @@ async function fetchData() {
   const locationIds = [locRed, locBel, locWood].filter(Boolean);
   const today = new Date();
   
-  // 1. Generate the precise 21 days we need to fetch
   const weekDates = [];
   for (let weekOffset = 1; weekOffset <= 3; weekOffset++) {
     for (let dow = 0; dow < 7; dow++) {
@@ -605,7 +604,6 @@ async function fetchData() {
     }
   }
 
-  // Clear global storage arrays
   salesByDowGlobal = {};
   salesByDowDates = {};
   for (let dow = 0; dow < 7; dow++) {
@@ -613,42 +611,40 @@ async function fetchData() {
   }
 
   try {
-    // 2. Loop through all 21 dates one-by-one
     for (let i = 0; i < weekDates.length; i++) {
       const targetDate = weekDates[i];
       const weekSlot = Math.floor(i / 7);
       const currentProgress = i + 1;
 
-      // This is the status banner updating live per day!
-      setStatus('gen-status', `<span class="spin"></span> Querying Reporting API: Day ${currentProgress}/21 (${targetDate})...`, 'info');
-
-      const payload = {
-        query: {
-          measures: ["ItemSales.quantity_sold"],
-          dimensions: [
-            "ItemSales.item_name",
-            "ItemSales.item_variation_name",
-            "ItemSales.location_id",
-            "ItemSales.local_reporting_date"
-          ],
-          filters: [
-            { dimension: "ItemSales.location_id", operator: "IN", values: locationIds },
-            { dimension: "ItemSales.local_reporting_date", operator: "IN", values: [targetDate] }
-          ],
-          timeDimensions: [{
-            dimension: "ItemSales.local_reporting_date",
-            dateRange: [targetDate, targetDate]
-          }]
-        }
-      };
-
       let dayData = null;
       let isProcessing = true;
       let attempts = 0;
 
-      // Single day queries complete incredibly fast
-      while (isProcessing && attempts < 10) {
+      // Increased safety ceiling to 30 attempts to allow heavy days to process completely
+      while (isProcessing && attempts < 30) {
         attempts++;
+        setStatus('gen-status', `<span class="spin"></span> Day ${currentProgress}/21 (${targetDate}) — Square is compiling metrics (Attempt ${attempts}/30)...`, 'info');
+
+        const payload = {
+          query: {
+            measures: ["ItemSales.quantity_sold"],
+            dimensions: [
+              "ItemSales.item_name",
+              "ItemSales.item_variation_name",
+              "ItemSales.location_id",
+              "ItemSales.local_reporting_date"
+            ],
+            filters: [
+              { dimension: "ItemSales.location_id", operator: "IN", values: locationIds },
+              { dimension: "ItemSales.local_reporting_date", operator: "IN", values: [targetDate] }
+            ],
+            timeDimensions: [{
+              dimension: "ItemSales.local_reporting_date",
+              dateRange: [targetDate, targetDate]
+            }]
+          }
+        };
+
         const response = await fetch(sqUrl('/reporting/v1/load'), {
           method: 'POST',
           headers: {
@@ -663,7 +659,7 @@ async function fetchData() {
         if (resJson.errors) throw new Error(resJson.errors[0].detail);
 
         if (resJson.error === "Continue wait" || resJson.status === "PROCESSING" || (!resJson.data && !resJson.rows && !Array.isArray(resJson))) {
-          await new Promise(resolve => setTimeout(resolve, 2000)); 
+          await new Promise(resolve => setTimeout(resolve, 3000)); 
         } else {
           dayData = resJson.data || resJson.rows || (Array.isArray(resJson) ? resJson : null);
           isProcessing = false;
@@ -671,10 +667,9 @@ async function fetchData() {
       }
 
       if (!dayData) {
-        throw new Error(`Square reporting engine failed to compile metrics for date: ${targetDate}`);
+        throw new Error(`Square reporting engine took too long to compile metrics for date: ${targetDate}`);
       }
 
-      // 3. Map this specific day's records straight into the planner table matrix
       dayData.forEach(row => {
         const itemName = row["ItemSales.item_name"] || row[0];
         const variationName = row["ItemSales.item_variation_name"] || row[1];
@@ -684,7 +679,7 @@ async function fetchData() {
 
         const fullName = variationName && variationName.toLowerCase() !== 'regular' 
           ? `${itemName} — ${variationName}` 
-          : menuItem; // Standard layout fallback
+          : itemName;
 
         let locKey = '';
         if (rowLocId === locRed) locKey = 'Red';
@@ -703,8 +698,9 @@ async function fetchData() {
       });
     }
 
-    // 4. Calculate final historical baselines cleanly
     calculateBaselinesFromReporting();
+    setStatus('gen-status', 'All 21 days pulled and aggregated successfully!', 'ok');
+    document.getElementById('fetch-btn').disabled = false;
 
   } catch (e) {
     setStatus('gen-status', 'Reporting API Error: ' + e.message, 'err');
