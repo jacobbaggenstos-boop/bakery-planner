@@ -394,7 +394,7 @@ const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{} };
+let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', loc_names:{}, open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{} };
 // autoOosData: populated during fetchData, never persisted to Supabase
 // structure: { 'dayName|locKey': { itemName: 'HH:MM' } }
 let autoOosData = {};
@@ -578,6 +578,9 @@ async function testConn(){
     const r=await fetch(sqUrl('/v2/locations'),{headers:sqH()});
     const d=await r.json();
     if(d.locations){
+      // Store id→name mapping for Reporting API location_name matching
+      cfg.loc_names = {};
+      for(const l of d.locations) cfg.loc_names[l.id] = l.name;
       setStatus('api-status','Connected. Locations: '+d.locations.map(l=>`${l.name} (${l.id})`).join(' · '),'ok');
     } else { setStatus('api-status','Error: '+(d.errors?.[0]?.detail||'Unknown'),'err'); }
   } catch(e){ setStatus('api-status','Connection failed: '+e.message,'err'); }
@@ -951,64 +954,77 @@ function pacificMidnightISO(date){
 }
 
 // ── SQUARE REPORTING API ─────────────────────────────────
-// Fetches item sales for a specific date and location using Square's
+// Fetches item sales for a specific date across ALL locations using Square's
 // Reporting API — the same data source as Square's own dashboard.
-// Returns { counts: {itemName: qty}, hourly: {itemName: {hour: qty}} }
-async function fetchDaySales(locId, dateStr) {
+// Returns { locName: { counts: {itemName: qty}, hourly: {itemName: {hr: qty}} } }
+// We fetch all locations at once (one API call per day) and split by location_name.
+async function fetchDaySalesAllLocs(dateStr) {
   // dateStr = 'YYYY-MM-DD' in local/Pacific time
   const query = {
     measures: ['ItemSales.items_sold_count'],
-    dimensions: ['ItemSales.item_name', 'ItemSales.variation_name', 'ItemSales.location_id'],
+    dimensions: [
+      'ItemSales.item_name',
+      'ItemSales.item_variation_name',
+      'ItemSales.location_name'
+    ],
     timeDimensions: [{
       dimension: 'ItemSales.local_reporting_timestamp',
       dateRange: [dateStr, dateStr],
       granularity: 'hour'
     }],
-    filters: [{ member: 'ItemSales.location_id', operator: 'equals', values: [locId] }],
-    segments: ['ItemSales.sales']
+    segments: ['ItemSales.sales'],
+    limit: 50000
   };
 
-  const counts = {}, hourly = {};
-  let cursor = null;
+  // locName -> {counts, hourly}
+  const result = {};
 
-  do {
-    const body = { query };
-    if(cursor) body.cursor = cursor;
+  let retries = 0;
+  const maxRetries = 15;
 
+  while(retries < maxRetries) {
     let r, d;
     try {
       r = await fetch(sqUrl('/reporting/v1/load'), {
         method: 'POST',
         headers: sqH(),
-        body: JSON.stringify(body)
+        body: JSON.stringify({ query })
       });
       d = await r.json();
     } catch(e) { break; }
 
-    if(d.error && d.error !== 'Continue wait') break;
-    // Handle "Continue wait" — query still processing, retry
-    if(d.error === 'Continue wait'){
+    if(d.error === 'Continue wait') {
       await new Promise(res => setTimeout(res, 2000));
+      retries++;
       continue;
     }
+    if(d.error) { console.error('Reporting API error:', d.error); break; }
 
     for(const row of d.data || []) {
+      const locName = row['ItemSales.location_name'] || '';
       const base = row['ItemSales.item_name'] || '?';
-      const vn = row['ItemSales.variation_name'] || '';
+      const vn = row['ItemSales.item_variation_name'] || '';
       const full = vn && vn.toLowerCase() !== 'regular' ? `${base} — ${vn}` : base;
       const qty = parseFloat(row['ItemSales.items_sold_count']) || 0;
       const tsKey = row['ItemSales.local_reporting_timestamp.hour'] || '';
       const hr = tsKey ? new Date(tsKey).getHours() : 0;
 
-      counts[full] = (counts[full] || 0) + qty;
-      if(!hourly[full]) hourly[full] = {};
-      hourly[full][hr] = (hourly[full][hr] || 0) + qty;
+      if(!result[locName]) result[locName] = { counts: {}, hourly: {} };
+      result[locName].counts[full] = (result[locName].counts[full] || 0) + qty;
+      if(!result[locName].hourly[full]) result[locName].hourly[full] = {};
+      result[locName].hourly[full][hr] = (result[locName].hourly[full][hr] || 0) + qty;
     }
+    break;
+  }
 
-    cursor = d.cursor || null;
-  } while(cursor);
+  return result;
+}
 
-  return { counts, hourly };
+// Wrapper that extracts one location's data from the all-locs result.
+// locNameMap: { 'Red': 'Redmond', 'Bel': 'Bellevue', 'Wood': 'Woodinville' }
+// (populated from the locations API during setup)
+function extractLocSales(allLocData, locName) {
+  return allLocData[locName] || { counts: {}, hourly: {} };
 }
 
 // Keep fetchOrders for the OOS hourly curve fallback (inventory changes still use Orders API)
@@ -1298,7 +1314,7 @@ async function fetchData() {
   const dowNames = {0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday'};
 
   let fetched = 0;
-  const totalFetches = 7 * WEEKS_TO_TRY * Object.values(locMap).filter(Boolean).length;
+  const totalFetches = 7 * WEEKS_TO_TRY; // one Reporting API call per day (all locs at once)
   setStatus('gen-status',`<span class="spin"></span> Fetching data… [0/${totalFetches}]`,'info');
 
   // oosByDow[dow][weekIdx][locKey] = { itemDisplayName: 'HH:MM' }
@@ -1313,6 +1329,25 @@ async function fetchData() {
   }
   const oosCache = await loadOosEventCache(allWeekDates);
 
+  // Build loc key → display name map from cfg.loc_names and configured location IDs
+  // The Reporting API returns location_name strings, so we need this to split results
+  const locKeyToName = {
+    Red: cfg.loc_names[locMap.Red] || 'Redmond',
+    Bel: cfg.loc_names[locMap.Bel] || 'Bellevue',
+    Wood: cfg.loc_names[locMap.Wood] || 'Woodinville',
+  };
+  // If loc_names isn't populated yet, fetch it now
+  if(!Object.keys(cfg.loc_names).length){
+    try{
+      const r=await fetch(sqUrl('/v2/locations'),{headers:sqH()});
+      const d=await r.json();
+      if(d.locations){ cfg.loc_names={}; for(const l of d.locations) cfg.loc_names[l.id]=l.name; }
+      locKeyToName.Red = cfg.loc_names[locMap.Red] || 'Redmond';
+      locKeyToName.Bel = cfg.loc_names[locMap.Bel] || 'Bellevue';
+      locKeyToName.Wood = cfg.loc_names[locMap.Wood] || 'Woodinville';
+    } catch(e){}
+  }
+
   for(let dow=0; dow<7; dow++){
     salesByDow[dow] = [];
     oosByDow[dow] = [];
@@ -1320,16 +1355,19 @@ async function fetchData() {
     for(const date of weekDates){
       const weekData = {};
       const weekOos = {};
-      // Format date as YYYY-MM-DD in Pacific time for Reporting API
       const dateStr = date.toLocaleDateString('en-CA', {timeZone:'America/Los_Angeles'});
-      for(const[loc, locId] of Object.entries(locMap)){
-        if(!locId){ weekData[loc]={counts:{},hourly:{}}; weekOos[loc]={}; continue; }
-        fetched++;
-        setStatus('gen-status',`<span class="spin"></span> Fetching ${LOC_LABEL[loc]} ${dowNames[dow]}s… [${fetched}/${totalFetches}]`,'info');
-        try{
-          weekData[loc] = await fetchDaySales(locId, dateStr);
-        } catch(e){ weekData[loc]={counts:{},hourly:{}}; }
-        weekOos[loc] = oosEventsForDate(oosCache, date, loc);
+      fetched++;
+      setStatus('gen-status',`<span class="spin"></span> Fetching ${dowNames[dow]}s… [${fetched}/${totalFetches}]`,'info');
+      try{
+        // Fetch all locations at once — one Reporting API call per day
+        const allLocData = await fetchDaySalesAllLocs(dateStr);
+        for(const loc of LOCS){
+          const locDisplayName = locKeyToName[loc];
+          weekData[loc] = extractLocSales(allLocData, locDisplayName);
+          weekOos[loc] = oosEventsForDate(oosCache, date, loc);
+        }
+      } catch(e){
+        for(const loc of LOCS){ weekData[loc]={counts:{},hourly:{}}; weekOos[loc]={}; }
       }
       salesByDow[dow].push(weekData);
       oosByDow[dow].push(weekOos);
