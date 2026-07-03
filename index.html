@@ -1382,6 +1382,8 @@ async function fetchData() {
       }
       salesByDow[dow].push(weekData);
       oosByDow[dow].push(weekOos);
+      // Small delay between requests to avoid any backend query caching/race issues
+      await new Promise(res => setTimeout(res, 1500));
     }
   }
 
