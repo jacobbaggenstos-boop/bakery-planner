@@ -291,9 +291,14 @@ input[type=range]{accent-color:var(--text)}
           <button class="btn" onclick="generate(true)">Debug item names</button>
           <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
-          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px"/>
-          <button class="btn" onclick="debugItemOos()">Debug this item's history</button>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px;min-width:200px"/>
+          <button class="btn" onclick="debugItemOos()">Debug this item's OOS history</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <input type="date" id="debug-report-date" style="font-size:13px"/>
+          <button class="btn" onclick="debugReportingApi()">Debug Reporting API for this date</button>
+          <span style="font-size:12px;color:var(--text3)">Shows raw API response before any processing</span>
         </div>
       </div>
 
@@ -305,6 +310,10 @@ input[type=range]{accent-color:var(--text)}
       <div id="debug-oos-wrap" style="display:none">
         <div class="sec-label">Debug — raw OOS inventory changes (last Tuesday, Redmond)</div>
         <div class="output" id="debug-oos-area" style="max-height:400px"></div>
+      </div>
+      <div id="debug-report-wrap" style="display:none">
+        <div class="sec-label">Debug — Reporting API raw response</div>
+        <div class="output" id="debug-report-area" style="max-height:500px"></div>
       </div>
 
       <!-- Step 2: Review + adjust (shown after fetch) -->
@@ -1898,6 +1907,85 @@ async function generate(debugMode=false){
       setStatus('gen-status','Debug complete.','ok');
     }catch(e){setStatus('gen-status','Error: '+e.message,'err');}
     return;
+  }
+}
+
+async function debugReportingApi(){
+  const dateStr = document.getElementById('debug-report-date').value;
+  if(!dateStr){ alert('Pick a date first.'); return; }
+  if(!token()){ setStatus('gen-status','Add your Square token.','err'); return; }
+
+  const areaEl = document.getElementById('debug-report-area');
+  const wrapEl = document.getElementById('debug-report-wrap');
+  setStatus('gen-status','<span class="spin"></span> Fetching Reporting API for '+dateStr+'…','info');
+
+  const query = {
+    measures: ['ItemSales.items_sold_count'],
+    dimensions: ['ItemSales.item_name','ItemSales.item_variation_name','ItemSales.location_name'],
+    timeDimensions: [{
+      dimension: 'ItemSales.local_reporting_timestamp',
+      dateRange: [dateStr, dateStr],
+      granularity: 'hour'
+    }],
+    segments: ['ItemSales.sales'],
+    limit: 50000
+  };
+
+  try {
+    const r = await fetch(sqUrl('/reporting/v1/load'), {
+      method: 'POST', headers: sqH(), body: JSON.stringify({query})
+    });
+    const d = await r.json();
+
+    const lines = [];
+    lines.push(`HTTP status: ${r.status}`);
+    lines.push(`Date: ${dateStr}`);
+    lines.push('');
+
+    if(d.error){
+      lines.push('ERROR: ' + d.error);
+      lines.push('Full response: ' + JSON.stringify(d, null, 2));
+    } else {
+      const rows = d.data || [];
+      lines.push(`Total rows returned: ${rows.length}`);
+      lines.push(`Query processing time: ${d.loadResponse?.queryExecTime||'?'}ms`);
+      lines.push('');
+
+      // Show first 5 raw rows so we can see the exact field names/values
+      lines.push('=== First 5 raw rows (exact API response) ===');
+      for(const row of rows.slice(0,5)){
+        lines.push(JSON.stringify(row));
+      }
+      lines.push('');
+
+      // Aggregate by location + item for quick comparison with Square dashboard
+      const byLocItem = {};
+      for(const row of rows){
+        const loc = row['ItemSales.location_name'] || '?';
+        const base = row['ItemSales.item_name'] || '?';
+        const vn = row['ItemSales.item_variation_name'] || '';
+        const full = vn && vn.toLowerCase()!=='regular' ? `${base} — ${vn}` : base;
+        const qty = parseFloat(row['ItemSales.items_sold_count']) || 0;
+        if(!byLocItem[loc]) byLocItem[loc] = {};
+        byLocItem[loc][full] = (byLocItem[loc][full]||0) + qty;
+      }
+
+      for(const [loc, items] of Object.entries(byLocItem).sort()){
+        lines.push(`=== ${loc} ===`);
+        const sorted = Object.entries(items).sort((a,b)=>b[1]-a[1]);
+        for(const [name, qty] of sorted.slice(0,20)){
+          lines.push(`  ${String(Math.round(qty)).padStart(5)}  ${name}`);
+        }
+        if(sorted.length>20) lines.push(`  ... and ${sorted.length-20} more items`);
+        lines.push('');
+      }
+    }
+
+    areaEl.textContent = lines.join('\n');
+    wrapEl.style.display = 'block';
+    setStatus('gen-status','Reporting API debug complete.','ok');
+  } catch(e){
+    setStatus('gen-status','Error: '+e.message,'err');
   }
 }
 
