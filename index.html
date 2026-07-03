@@ -1532,29 +1532,46 @@ async function fetchData() {
               qty += added; oosAdded += added;
             }
           }
+          // Detect if the location was closed this day (not just this item having
+          // zero sales — a genuinely slow day for one item is real data and should
+          // stay in the pool). We check TOTAL sales across all items at this location
+          // for this day; near-zero total strongly indicates a closure, not low demand.
+          const locTotalSales = Object.values(sales).reduce((a,b)=>a+b,0);
+          const wasClosed = locTotalSales < 5; // a handful of stray online orders still counts as closed
+
           // Track per-day/loc missed sales for the OOS tab display
           if(wIdx===0){
             const detailKey = dayName+'|'+loc;
             if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
             oosMissedSalesDetail[detailKey][pi.name] = Math.round(oosAdded);
           }
-          return {qty, rawQty};
+          return {qty, rawQty, wasClosed};
         });
 
-        // Smart averaging: use best pair based on RAW quantities (no OOS)
-        // so OOS adjustments don't influence which weeks get selected.
-        // Then apply the same pair selection to the OOS-adjusted quantities.
-        const rawQtys = weeklyQtys.map(w=>w.rawQty);
-        const adjQtys = weeklyQtys.map(w=>w.qty);
+        // Filter out closed days before pair selection — a closure isn't a real
+        // sales data point and would corrupt the outlier/averaging logic.
+        const openWeeklyQtys = weeklyQtys.filter(w => !w.wasClosed);
 
-        // Find which pair smartPairAverage would select on raw data
-        const bestPairIndices = smartPairIndices(rawQtys);
-        const rawAvg = bestPairIndices
-          ? (rawQtys[bestPairIndices[0]] + rawQtys[bestPairIndices[1]]) / 2
-          : smartPairAverage(rawQtys);
-        const avg = bestPairIndices
-          ? (adjQtys[bestPairIndices[0]] + adjQtys[bestPairIndices[1]]) / 2
-          : smartPairAverage(adjQtys);
+        // Smart averaging: use best pair based on RAW quantities (no OOS),
+        // excluding any closed days from consideration entirely.
+        // Then apply the same pair selection to the OOS-adjusted quantities.
+        const openRawQtys = openWeeklyQtys.map(w=>w.rawQty);
+        const openAdjQtys = openWeeklyQtys.map(w=>w.qty);
+
+        let rawAvg, avg;
+        if(openRawQtys.length === 0){
+          rawAvg = 0; avg = 0;
+        } else if(openRawQtys.length === 1){
+          rawAvg = openRawQtys[0]; avg = openAdjQtys[0];
+        } else {
+          const bestPairIndices = smartPairIndices(openRawQtys);
+          rawAvg = bestPairIndices
+            ? (openRawQtys[bestPairIndices[0]] + openRawQtys[bestPairIndices[1]]) / 2
+            : smartPairAverage(openRawQtys);
+          avg = bestPairIndices
+            ? (openAdjQtys[bestPairIndices[0]] + openAdjQtys[bestPairIndices[1]]) / 2
+            : smartPairAverage(openAdjQtys);
+        }
 
         if(pi.sec==='kitchen'){
           const buf = 1+(parseFloat(document.getElementById('kitchen-buffer')?.value)||cfg.kitchen_buffer||5)/100;
