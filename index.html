@@ -194,7 +194,7 @@ input[type=range]{accent-color:var(--text)}
         <div class="step"><div class="stepn">1</div><p>Go to <a href="https://developer.squareup.com" target="_blank">developer.squareup.com</a> and sign in.</p></div>
         <div class="step"><div class="stepn">2</div><p>Create a new application → open it → click the <strong>Production</strong> tab → copy the <strong>Production Access Token</strong>. This is personal — paste it above but it won't be shared with teammates.</p></div>
         <div class="step"><div class="stepn">3</div><p>Location IDs: <strong>Square Dashboard → Account &amp; Settings → Locations</strong>. Each starts with <code>L</code>. These are shared.</p></div>
-        <div class="step"><div class="stepn">4</div><p>For the proxy URL, see the ValTown setup from the original deployment. Paste the same URL here.</p></div>
+        <div class="step"><div class="stepn">4</div><p>For the proxy URL, see the Val Town setup from the original deployment. Paste the same URL here.</p></div>
       </div>
     </div>
 
@@ -292,11 +292,11 @@ input[type=range]{accent-color:var(--text)}
           <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px;min-width:200px;">
+          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px;min-width:200px"/>
           <button class="btn" onclick="debugItemOos()">Debug this item's OOS history</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
-          <input type="date" id="debug-report-date" style="font-size:13px;">
+          <input type="date" id="debug-report-date" style="font-size:13px"/>
           <button class="btn" onclick="debugReportingApi()">Debug Reporting API for this date</button>
           <span style="font-size:12px;color:var(--text3)">Shows raw API response before any processing</span>
         </div>
@@ -1008,6 +1008,8 @@ async function fetchDaySalesAllLocs(dateStr) {
       continue;
     }
     if(d.error) { console.error('Reporting API error:', d.error); break; }
+
+    console.log(`[fetchDaySalesAllLocs ${dateStr}] rows returned: ${(d.data||[]).length}`);
 
     for(const row of d.data || []) {
       const locName = row['ItemSales.location_name'] || '';
