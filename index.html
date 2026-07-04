@@ -880,9 +880,13 @@ function renderAutoOosList(){
       statusBadge='bwarn'; statusNote=`${count} interval${count>1?'s':''} adjusted`;
     }
 
-    const missedSales = oosMissedSalesDetail[key]?.[curOosWeekIdx]?.[name];
+    const missedInfo = oosMissedSalesDetail[key]?.[curOosWeekIdx]?.[name];
+    const missedSales = missedInfo?.value;
+    const confidence = missedInfo?.confidence;
+    const confBadge = confidence==='low' ? ' <span style="font-size:10px;color:var(--text3)" title="Low confidence — limited clean reference data available">(low conf.)</span>'
+                     : confidence==='medium' ? ' <span style="font-size:10px;color:var(--text3)" title="Medium confidence">(med conf.)</span>' : '';
     const missedSalesText = (missedSales!==undefined)
-      ? (missedSales>0 ? `+${missedSales}` : '—')
+      ? (missedSales>0 ? `+${missedSales}${confBadge}` : '—')
       : '<span style="color:var(--text3)" title="Fetch data on the Generate tab to calculate">not calculated</span>';
 
     html+=`<tr>
@@ -1143,53 +1147,25 @@ function mergeIntervals(intervals){
   return merged;
 }
 
+// Estimates missed sales during OOS intervals for one item on one day.
+//
+// Method: build a reference demand SHAPE from other sample days (what fraction
+// of daily volume typically falls in each hour). Then calibrate that shape
+// against THIS day's own real, uncontaminated hours — i.e. use today's actual
+// sales in the hours it was NOT out of stock to figure out whether today was
+// running above/below a typical day, and by how much. Apply that calibration
+// to the reference shape's expected share for the missed hours to estimate
+// what would have sold. This avoids scaling off today's own suppressed total,
+// which would systematically under-correct.
+//
+// Returns { addition: number, confidence: 'high'|'medium'|'low' }
 function calcOosAddition(hourlyData, otherDaysHourly, intervals, cutoff, openTime, closeTime){
-  if(!hourlyData || !intervals?.length) return 0;
+  const empty = {addition: 0, confidence: 'low'};
+  if(!hourlyData || !intervals?.length) return empty;
   const openH=timeToH(openTime), closeH=timeToH(closeTime), cutoffH=timeToH(cutoff||'23:59');
-  const totalSales=Object.values(hourlyData).reduce((a,b)=>a+b,0);
 
-  // Build a reference hourly curve from other days (sum across days per hour).
-  // Other days may be partial (contaminated hours zeroed out) — we still use them,
-  // but we need to normalize correctly. For each reference day, we compute its
-  // total observed sales (non-zeroed hours only) and scale the curve to a
-  // consistent per-day unit so partial days don't under-weight the reference.
-  const refDays = (otherDaysHourly||[]).filter(h=>h && Object.keys(h).length);
-  const refCurve={}; // hour -> normalized demand share (summed across days)
-  let refDayCount=0;
-
-  for(const dayHourly of refDays){
-    // Total observed sales for this reference day (open hours only)
-    let dayTotal=0;
-    for(const[h,q] of Object.entries(dayHourly)){
-      const hr=parseInt(h);
-      if(hr>=openH && hr<closeH) dayTotal+=q;
-    }
-    if(dayTotal===0) continue;
-    refDayCount++;
-    // Add this day's normalized hourly share to the reference curve
-    for(const[h,q] of Object.entries(dayHourly)){
-      const hr=parseInt(h);
-      if(hr>=openH && hr<closeH) refCurve[hr]=(refCurve[hr]||0)+(q/dayTotal);
-    }
-  }
-
-  // Fallback: if no reference days, use this day's own curve
-  if(refDayCount===0){
-    let dayTotal=0;
-    for(const[h,q] of Object.entries(hourlyData)){
-      const hr=parseInt(h); if(hr>=openH && hr<closeH) dayTotal+=q;
-    }
-    if(dayTotal===0) return 0;
-    for(const[h,q] of Object.entries(hourlyData)){
-      const hr=parseInt(h);
-      if(hr>=openH && hr<closeH) refCurve[hr]=(refCurve[hr]||0)+(q/dayTotal);
-    }
-    refDayCount=1;
-  }
-
-  // refCurve[hr] is now the average fraction of daily demand at each hour
-  // (summed across refDayCount days, so divide by refDayCount to normalize)
-  let missedFraction=0;
+  // Determine which hours were actually missed (before cutoff, clipped to open/close)
+  const missedHours = new Set();
   for(const interval of intervals){
     const fromH=timeToH(interval.from);
     if(fromH>=cutoffH) continue;
@@ -1197,16 +1173,90 @@ function calcOosAddition(hourlyData, otherDaysHourly, intervals, cutoff, openTim
     if(untilRawH!==null && untilRawH < openH) untilRawH = null;
     const untilH = untilRawH!==null ? Math.min(untilRawH, cutoffH, closeH) : Math.min(cutoffH, closeH);
     if(untilH<=fromH) continue;
-
-    let windowShare=0;
-    for(const[h,share] of Object.entries(refCurve)){
-      const hr=parseInt(h);
-      if(hr>=fromH && hr<untilH) windowShare+=share;
+    for(let h=Math.floor(fromH); h<Math.ceil(untilH); h++){
+      if(h>=openH && h<closeH) missedHours.add(h);
     }
-    missedFraction+=windowShare/refDayCount;
+  }
+  if(missedHours.size===0) return empty;
+
+  // Build the reference SHAPE curve from other days (normalized per-day fractions,
+  // averaged across however many reference days are usable — same as before).
+  const refDays = (otherDaysHourly||[]).filter(h=>h && Object.keys(h).length);
+  const refCurve={}; // hour -> average fraction of daily demand
+  let refDayCount=0;
+  for(const dayHourly of refDays){
+    let dayTotal=0;
+    for(const[h,q] of Object.entries(dayHourly)){
+      const hr=parseInt(h);
+      if(hr>=openH && hr<closeH) dayTotal+=q;
+    }
+    if(dayTotal===0) continue;
+    refDayCount++;
+    for(const[h,q] of Object.entries(dayHourly)){
+      const hr=parseInt(h);
+      if(hr>=openH && hr<closeH) refCurve[hr]=(refCurve[hr]||0)+(q/dayTotal);
+    }
+  }
+  for(const h of Object.keys(refCurve)) refCurve[h] /= (refDayCount||1);
+
+  // Fallback: no reference days at all — use this day's own (suppressed) curve as shape.
+  // Confidence is low since we have no independent shape data.
+  const usingOwnCurveFallback = refDayCount===0;
+  if(usingOwnCurveFallback){
+    let dayTotal=0;
+    for(const[h,q] of Object.entries(hourlyData)){
+      const hr=parseInt(h); if(hr>=openH && hr<closeH) dayTotal+=q;
+    }
+    if(dayTotal===0) return empty;
+    for(const[h,q] of Object.entries(hourlyData)){
+      const hr=parseInt(h);
+      if(hr>=openH && hr<closeH) refCurve[hr]=(q/dayTotal);
+    }
   }
 
-  return Math.ceil(totalSales*missedFraction);
+  // Calibrate: compare today's ACTUAL sales in its uncontaminated (non-missed) hours
+  // against what the reference shape says those hours should represent, as a fraction
+  // of a typical full day. This gives us "today ran at X% of a typical day" using
+  // only real, unsuppressed data from today itself.
+  let todayCleanSales=0, refCleanShare=0, cleanHourCount=0;
+  for(const[h,q] of Object.entries(hourlyData)){
+    const hr=parseInt(h);
+    if(hr>=openH && hr<closeH && !missedHours.has(hr)){
+      todayCleanSales+=q;
+      refCleanShare+=(refCurve[hr]||0);
+      cleanHourCount++;
+    }
+  }
+
+  // Reference shape's expected share for the missed hours
+  let missedShare=0;
+  for(const h of missedHours) missedShare+=(refCurve[h]||0);
+
+  let addition, confidence;
+  if(refCleanShare>0 && cleanHourCount>=2 && !usingOwnCurveFallback){
+    // Calibration factor: today's clean-hour sales ÷ what the reference shape
+    // predicts a typical day would produce in those same clean hours.
+    const calibration = todayCleanSales/refCleanShare;
+    addition = calibration*missedShare;
+    // Confidence based on how much of the day we could calibrate against and
+    // how many reference days informed the shape
+    confidence = (cleanHourCount>=4 && refDayCount>=2) ? 'high' : 'medium';
+  } else {
+    // Not enough clean hours to calibrate (e.g. OOS almost all day), or no
+    // reference days at all — fall back to scaling by today's own total.
+    // Lower confidence since this is more likely to under-correct.
+    const totalSales=Object.values(hourlyData).reduce((a,b)=>a+b,0);
+    addition = totalSales*missedShare;
+    confidence = 'low';
+  }
+
+  // Sanity cap: don't let a single noisy calibration produce an implausible spike.
+  // Cap the addition at 3x today's own observed sales for this item.
+  const observedToday = Object.values(hourlyData).reduce((a,b)=>a+b,0);
+  const cap = Math.max(observedToday*3, 10); // at least allow some addition for near-zero days
+  if(addition>cap){ addition=cap; confidence='low'; }
+
+  return { addition: Math.ceil(addition), confidence };
 }
 
 // ── OOS AUTO-DETECT via Supabase webhook events ───────────
@@ -1531,13 +1581,17 @@ async function fetchData() {
           let qty = 0;
           let oosAdded = 0;
           let rawQty = 0; // same as qty but without OOS additions — for rawBaselineData
+          let oosConfidence = null; // lowest confidence seen across all contributing relationships
+          const confidenceRank = {high:2, medium:1, low:0};
           for(const rel of myRels){
             const salesQty = lookupSales(sales, rel.menu) * rel.qty;
             qty += salesQty;
             rawQty += salesQty;
             if(effectiveIntervals){
-              const added = calcOosAddition(lookupHourly(hourly,rel.menu), buildOtherDaysHourly(rel.menu), effectiveIntervals, cutoff, openTime, closeTime)*rel.qty;
+              const result = calcOosAddition(lookupHourly(hourly,rel.menu), buildOtherDaysHourly(rel.menu), effectiveIntervals, cutoff, openTime, closeTime);
+              const added = result.addition*rel.qty;
               qty += added; oosAdded += added;
+              if(oosConfidence===null || confidenceRank[result.confidence]<confidenceRank[oosConfidence]) oosConfidence=result.confidence;
             }
           }
           if(myRels.length===0){
@@ -1545,8 +1599,9 @@ async function fetchData() {
             qty = salesQty;
             rawQty = salesQty;
             if(effectiveIntervals){
-              const added = calcOosAddition(lookupHourly(hourly,pi.name), buildOtherDaysHourly(pi.name), effectiveIntervals, cutoff, openTime, closeTime);
-              qty += added; oosAdded += added;
+              const result = calcOosAddition(lookupHourly(hourly,pi.name), buildOtherDaysHourly(pi.name), effectiveIntervals, cutoff, openTime, closeTime);
+              qty += result.addition; oosAdded += result.addition;
+              oosConfidence = result.confidence;
             }
           }
           // Detect if the location was closed this day (not just this item having
@@ -1560,7 +1615,7 @@ async function fetchData() {
           const detailKey = dayName+'|'+loc;
           if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
           if(!oosMissedSalesDetail[detailKey][wIdx]) oosMissedSalesDetail[detailKey][wIdx]={};
-          oosMissedSalesDetail[detailKey][wIdx][pi.name] = Math.round(oosAdded);
+          oosMissedSalesDetail[detailKey][wIdx][pi.name] = {value: Math.round(oosAdded), confidence: oosConfidence||'low'};
           return {qty, rawQty, wasClosed};
         });
 
