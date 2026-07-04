@@ -264,6 +264,15 @@ input[type=range]{accent-color:var(--text)}
         </div>
         <div class="day-tabs" id="oos-days"></div>
         <div class="loc-tabs" id="oos-locs"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+          <label style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">Sample week</label>
+          <select id="oos-week-select" style="font-size:13px" onchange="switchOosWeekIdx(this.value)">
+            <option value="0">Most recent</option>
+            <option value="1">2nd most recent</option>
+            <option value="2">3rd most recent</option>
+          </select>
+          <span id="oos-week-date-label" style="font-size:12px;color:var(--text3)"></span>
+        </div>
         <div id="auto-oos-list"></div>
         <div class="sec-label" style="margin-top:16px">Manual overrides</div>
         <div class="hint" style="margin-bottom:8px">Use these only if auto-detection missed something or pulled the wrong time.</div>
@@ -415,7 +424,7 @@ let dayLocAdjs = []; // [{day:'Friday', loc:'Red'|'all', pct:20, dir:'increase'|
 let salesByDowGlobal = {}; // persisted copy of salesByDow for the Verify tab
 let salesByDowDates = {}; // dow -> [date strings] for display in Verify tab
 let oosData = {};
-let curOosDay = 'Tuesday', curOosLoc = 'Red';
+let curOosDay = 'Tuesday', curOosLoc = 'Red', curOosWeekIdx = 0;
 let orderQtys = {};
 let saveTimer = null;
 
@@ -829,15 +838,21 @@ function renderOosDays(){ document.getElementById('oos-days').innerHTML=DAYS.map
 function renderOosLocs(){ document.getElementById('oos-locs').innerHTML=LOCS.map(l=>`<button class="ltab${l===curOosLoc?' active':''}" onclick="switchOosLoc('${l}')">${LOC_LABEL[l]}</button>`).join(''); }
 function switchOosDay(d){ curOosDay=d; renderOosDays(); renderAutoOosList(); renderOosList(); }
 function switchOosLoc(l){ curOosLoc=l; renderOosLocs(); renderAutoOosList(); renderOosList(); }
+function switchOosWeekIdx(idx){ curOosWeekIdx=parseInt(idx); renderAutoOosList(); }
 
 function renderAutoOosList(){
   const el=document.getElementById('auto-oos-list');
   if(!el) return;
   const key=curOosDay+'|'+curOosLoc;
-  const autoItems=autoOosData[key]||{};
+  const dayIdx = DAYS.indexOf(curOosDay); // DAYS = Tue..Mon, matches salesByDowDates keys
+  const dateLabel = salesByDowDates[dayIdx]?.[curOosWeekIdx];
+  const dateLabelEl = document.getElementById('oos-week-date-label');
+  if(dateLabelEl) dateLabelEl.textContent = dateLabel ? `(${dateLabel})` : '';
+
+  const autoItems = autoOosData[key]?.[curOosWeekIdx] || {};
   const entries=Object.entries(autoItems);
   if(!entries.length){
-    el.innerHTML=`<p class="empty" style="text-align:left;padding:10px 0">No auto-detected OOS events for ${curOosDay} at ${LOC_LABEL[curOosLoc]}. Fetch data on the Generate tab to populate this.</p>`;
+    el.innerHTML=`<p class="empty" style="text-align:left;padding:10px 0">No auto-detected OOS events for ${curOosDay} at ${LOC_LABEL[curOosLoc]} for this sample week. Fetch data on the Generate tab to populate this.</p>`;
     return;
   }
   const closeTime=cfg.close_time||'17:00';
@@ -865,7 +880,7 @@ function renderAutoOosList(){
       statusBadge='bwarn'; statusNote=`${count} interval${count>1?'s':''} adjusted`;
     }
 
-    const missedSales = oosMissedSalesDetail[key]?.[name];
+    const missedSales = oosMissedSalesDetail[key]?.[curOosWeekIdx]?.[name];
     const missedSalesText = (missedSales!==undefined)
       ? (missedSales>0 ? `+${missedSales}` : '—')
       : '<span style="color:var(--text3)" title="Fetch data on the Generate tab to calculate">not calculated</span>';
@@ -1447,11 +1462,13 @@ async function fetchData() {
           // stockout once instead of N times.
           if(autoIntervals?.length>1) autoIntervals = mergeIntervals(autoIntervals);
 
-          // Accumulate autoOosData for OOS tab display (most recent week only)
-          if(wIdx===0 && autoIntervals?.length){
+          // Store autoOosData for ALL weeks (not just most recent) so the OOS tab's
+          // week selector can show any of the 3 sample weeks, not just the newest.
+          if(autoIntervals?.length){
             const k = dayName+'|'+loc;
             if(!autoOosData[k]) autoOosData[k]={};
-            autoOosData[k][pi.name] = autoIntervals;
+            if(!autoOosData[k][wIdx]) autoOosData[k][wIdx]={};
+            autoOosData[k][wIdx][pi.name] = autoIntervals;
           }
 
           let effectiveIntervals = null;
@@ -1539,12 +1556,11 @@ async function fetchData() {
           const locTotalSales = Object.values(sales).reduce((a,b)=>a+b,0);
           const wasClosed = locTotalSales < 5; // a handful of stray online orders still counts as closed
 
-          // Track per-day/loc missed sales for the OOS tab display
-          if(wIdx===0){
-            const detailKey = dayName+'|'+loc;
-            if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
-            oosMissedSalesDetail[detailKey][pi.name] = Math.round(oosAdded);
-          }
+          // Track per-day/loc/week missed sales for the OOS tab display
+          const detailKey = dayName+'|'+loc;
+          if(!oosMissedSalesDetail[detailKey]) oosMissedSalesDetail[detailKey]={};
+          if(!oosMissedSalesDetail[detailKey][wIdx]) oosMissedSalesDetail[detailKey][wIdx]={};
+          oosMissedSalesDetail[detailKey][wIdx][pi.name] = Math.round(oosAdded);
           return {qty, rawQty, wasClosed};
         });
 
