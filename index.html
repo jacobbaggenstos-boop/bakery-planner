@@ -1555,14 +1555,12 @@ function getLastNWeekdays(dayOfWeek, n) {
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  // Find the start of the current week (most recent Tuesday = week start for this bakery)
-  // Skip any dates from the current week so we only sample complete weeks.
-  const currentWeekStart = new Date(today);
-  while(currentWeekStart.getDay() !== 2) currentWeekStart.setDate(currentWeekStart.getDate()-1);
-  // currentWeekStart is now the most recent Tuesday (could be today if today is Tue)
-
-  let d = new Date(currentWeekStart);
-  d.setDate(d.getDate()-1); // start searching from the day before this week began
+  // Start searching from yesterday and walk backward. This only excludes
+  // TODAY itself (which has incomplete data) — any other past day, even one
+  // from the still-forming current week, is a fully complete business day
+  // and fair game to use.
+  let d = new Date(today);
+  d.setDate(d.getDate()-1);
 
   while(dates.length < n) {
     if(d.getDay() === dayOfWeek) dates.push(new Date(d));
