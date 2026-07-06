@@ -112,7 +112,7 @@ input[type=range]{accent-color:var(--text)}
 
 <div id="app" style="display:none">
   <header>
-    <div><h1>Bakery Production Planner</h1><p>Square → ingredient logic → weekly bake number → paste to Excel</p></div>
+    <div><h1>Bakery Production Planner</h1><p>Square → ingredient logic → weekly bake numbers → paste to Excel</p></div>
     <div style="display:flex;align-items:center;gap:8px">
       <span id="hdr-user" style="font-size:12px;color:var(--text2)"></span>
       <button class="btn btnsm" onclick="signOut()">Sign out</button>
@@ -122,6 +122,7 @@ input[type=range]{accent-color:var(--text)}
     <button class="tab active" onclick="showTab('catalog',this)">Catalog</button>
     <button class="tab" onclick="showTab('recipes',this)">Relationships</button>
     <button class="tab" onclick="showTab('oos',this)">Out of stock</button>
+    <button class="tab" onclick="showTab('waste',this)">Waste</button>
     <button class="tab" onclick="showTab('generate',this)">Generate</button>
     <button class="tab" onclick="showTab('verify',this)">Verify</button>
     <button class="tab" onclick="showTab('setup',this)">Setup</button>
@@ -284,6 +285,43 @@ input[type=range]{accent-color:var(--text)}
       </div>
     </div>
 
+    <!-- WASTE -->
+    <div id="tab-waste" class="panel">
+      <div class="card">
+        <div class="card-title">Bakery waste tracking <span class="badge binfo">from Square modifiers</span></div>
+        <div class="hint">Tracks "Bakery Waste EOD" and "Bakery Waste TCS" sales, broken down by modifier quantities. Pull data below, then browse by day/week/location.</div>
+        <button class="btn btnp" id="waste-fetch-btn" onclick="fetchWasteData()">Pull last 2 weeks of waste data</button>
+        <div id="waste-status" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Browse waste by day</div>
+        <div class="day-tabs" id="waste-days"></div>
+        <div class="loc-tabs" id="waste-locs"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+          <label style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">Sample week</label>
+          <select id="waste-week-select" style="font-size:13px" onchange="switchWasteWeekIdx(this.value)">
+            <option value="0">Most recent</option>
+            <option value="1">2nd most recent</option>
+            <option value="2">3rd most recent</option>
+          </select>
+          <span id="waste-week-date-label" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+        <div id="waste-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Modifier → production item mappings <span class="badge bwarn">required for planning use</span></div>
+        <div class="hint">Waste modifier names in Square may not exactly match your production item names. Map each waste modifier to the production item it represents.</div>
+        <div id="waste-mappings-list"></div>
+        <div class="add-row">
+          <div class="fg"><label>Waste modifier name</label><input type="text" id="new-waste-modifier" placeholder="e.g. Plain Croissant"/></div>
+          <div class="fg"><label>Production item</label><select id="new-waste-prod"></select></div>
+          <button class="btn btnp" style="align-self:flex-end" onclick="addWasteMapping()">+ Add</button>
+        </div>
+      </div>
+    </div>
+
     <!-- GENERATE -->
     <div id="tab-generate" class="panel">
 
@@ -412,7 +450,7 @@ const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', loc_names:{}, open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{} };
+let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', loc_names:{}, open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{}, waste_mappings:[] };
 // autoOosData: populated during fetchData, never persisted to Supabase
 // structure: { 'dayName|locKey': { itemName: 'HH:MM' } }
 let autoOosData = {};
@@ -423,6 +461,9 @@ let oosEnabled = true; // toggle for Step 3 — whether OOS adjustments are incl
 let dayLocAdjs = []; // [{day:'Friday', loc:'Red'|'all', pct:20, dir:'increase'|'drop'}]
 let salesByDowGlobal = {}; // persisted copy of salesByDow for the Verify tab
 let salesByDowDates = {}; // dow -> [date strings] for display in Verify tab
+let wasteByDow = {}; // dow -> [ {locKey: {eod:{modName:qty}, tcs:{modName:qty}}} ] per week sample
+let wasteByDowDates = {}; // dow -> [date strings] for display in Waste tab
+let curWasteDay = 'Tuesday', curWasteLoc = 'Red', curWasteWeekIdx = 0;
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red', curOosWeekIdx = 0;
 let orderQtys = {};
@@ -486,6 +527,7 @@ async function loadConfig(){
     cfg.close_time = data.close_time||'17:00';
     cfg.kitchen_buffer = data.kitchen_buffer||5;
     cfg.item_multipliers = data.item_multipliers||{};
+    cfg.waste_mappings = data.mappings||[]; // repurposing the unused 'mappings' column
   }
   // Load OOS for current week from Supabase
   const weekStart = getDefaultWeekStart();
@@ -522,6 +564,7 @@ function applyConfig(){
   renderProdItems(); renderRels(); renderCatalogGrid();
   renderOosDays(); renderOosLocs(); renderAutoOosList(); renderOosList();
   renderDayLocAdjs();
+  renderWasteDays(); renderWasteLocs(); renderWasteMappings(); populateWasteProdSelect();
   updateRelProdSelect();
   if(cfg.catalog.length) document.getElementById('catalog-count').textContent = cfg.catalog.length+' items';
   // Set default week start
@@ -566,12 +609,18 @@ async function saveConfigField(field, value){
   await sb.from('bakery_config').update({[field]:value, updated_at:new Date().toISOString(), updated_by:currentUser.id}).eq('id','main');
 }
 
+// waste_mappings is stored in the 'mappings' column (repurposed unused column)
+async function saveWasteMappings(){
+  await sb.from('bakery_config').update({mappings:cfg.waste_mappings, updated_at:new Date().toISOString(), updated_by:currentUser.id}).eq('id','main');
+}
+
 // ── TABS ──────────────────────────────────────────────────
 function showTab(name, el){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   el.classList.add('active');
+  if(name==='waste') populateWasteProdSelect();
 }
 
 function setStatus(id, msg, type){
@@ -914,6 +963,159 @@ async function reloadOosWeek(){
   renderOosList();
 }
 
+// ── WASTE TAB ─────────────────────────────────────────────
+async function fetchWasteData(){
+  const tok = token();
+  if(!tok){ setStatus('waste-status','Add your Square token in Setup.','err'); return; }
+  const locRed = document.getElementById('loc-red').value.trim()||cfg.loc_red;
+  const locBel = document.getElementById('loc-bel').value.trim()||cfg.loc_bel;
+  const locWood = document.getElementById('loc-wood').value.trim()||cfg.loc_wood;
+  const locMap = {Red:locRed, Bel:locBel, Wood:locWood};
+  const validLocIds = Object.values(locMap).filter(Boolean);
+  if(!validLocIds.length){ setStatus('waste-status','Add location IDs in Setup first.','err'); return; }
+
+  document.getElementById('waste-fetch-btn').disabled = true;
+  const WEEKS_TO_TRY = 3;
+  const dowNames=['Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Monday'];
+  let fetched=0;
+  const totalFetches = 7*WEEKS_TO_TRY;
+
+  wasteByDow = {};
+  wasteByDowDates = {};
+
+  // Invert locMap: locId -> locKey
+  const idToLocKey = {};
+  for(const[k,v] of Object.entries(locMap)) if(v) idToLocKey[v]=k;
+
+  for(let dow=0; dow<7; dow++){
+    wasteByDow[dow] = [];
+    const dowIndex = [2,3,4,5,6,0,1][dow];
+    const weekDates = getLastNWeekdays(dowIndex, WEEKS_TO_TRY);
+    wasteByDowDates[dow] = weekDates.map(d=>d.toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}));
+
+    for(const date of weekDates){
+      fetched++;
+      setStatus('waste-status',`<span class="spin"></span> Fetching ${dowNames[dow]}s… [${fetched}/${totalFetches}]`,'info');
+      const startISO = pacificMidnightISO(date);
+      const endISO = pacificMidnightISO(new Date(new Date(date).setDate(date.getDate()+1)));
+      const weekWaste = {Red:{eod:{},tcs:{}}, Bel:{eod:{},tcs:{}}, Wood:{eod:{},tcs:{}}};
+      try{
+        const byLocId = await fetchDayWaste(validLocIds, startISO, endISO);
+        for(const[locId, data] of Object.entries(byLocId)){
+          const locKey = idToLocKey[locId];
+          if(locKey) weekWaste[locKey] = data;
+        }
+      } catch(e){ /* leave empty on error */ }
+      wasteByDow[dow].push(weekWaste);
+    }
+  }
+
+  document.getElementById('waste-fetch-btn').disabled = false;
+  setStatus('waste-status','Waste data fetched.','ok');
+  renderWasteDays(); renderWasteLocs(); renderWasteList();
+  populateWasteProdSelect();
+}
+
+function renderWasteDays(){
+  const el=document.getElementById('waste-days');
+  if(!el) return;
+  el.innerHTML=DAYS.map(d=>`<button class="dtab${d===curWasteDay?' active':''}" onclick="switchWasteDay('${d}')">${d.slice(0,3)}</button>`).join('');
+}
+function renderWasteLocs(){
+  const el=document.getElementById('waste-locs');
+  if(!el) return;
+  el.innerHTML=LOCS.map(l=>`<button class="ltab${l===curWasteLoc?' active':''}" onclick="switchWasteLoc('${l}')">${LOC_LABEL[l]}</button>`).join('');
+}
+function switchWasteDay(d){ curWasteDay=d; renderWasteDays(); renderWasteList(); }
+function switchWasteLoc(l){ curWasteLoc=l; renderWasteLocs(); renderWasteList(); }
+function switchWasteWeekIdx(idx){ curWasteWeekIdx=parseInt(idx); renderWasteList(); }
+
+function renderWasteList(){
+  const el=document.getElementById('waste-list');
+  if(!el) return;
+  const dayIdx = DAYS.indexOf(curWasteDay);
+  const dateLabel = wasteByDowDates[dayIdx]?.[curWasteWeekIdx];
+  const dateLabelEl = document.getElementById('waste-week-date-label');
+  if(dateLabelEl) dateLabelEl.textContent = dateLabel ? `(${dateLabel})` : '';
+
+  const weekData = wasteByDow[dayIdx]?.[curWasteWeekIdx];
+  if(!weekData){
+    el.innerHTML = '<p class="empty">No waste data — click "Pull last 2 weeks of waste data" above.</p>';
+    return;
+  }
+  const locData = weekData[curWasteLoc] || {eod:{}, tcs:{}};
+
+  // Combine EOD and TCS into one item list
+  const allItems = new Set([...Object.keys(locData.eod||{}), ...Object.keys(locData.tcs||{})]);
+  if(!allItems.size){
+    el.innerHTML = `<p class="empty">No waste logged for ${curWasteDay} at ${LOC_LABEL[curWasteLoc]} this week.</p>`;
+    return;
+  }
+
+  let html='<table class="tbl"><thead><tr><th>Item</th><th style="text-align:right">EOD waste</th><th style="text-align:right">TCS waste</th><th style="text-align:right;font-weight:700">Total</th><th>Maps to</th></tr></thead><tbody>';
+  const rows=[...allItems].map(name=>{
+    const eod=locData.eod?.[name]||0;
+    const tcs=locData.tcs?.[name]||0;
+    return {name, eod, tcs, total:eod+tcs};
+  }).sort((a,b)=>b.total-a.total);
+
+  for(const row of rows){
+    const mapping = cfg.waste_mappings.find(m=>cleanName(m.modifier)===cleanName(row.name));
+    const mapsTo = mapping ? mapping.prod : '<span style="color:var(--text3)">unmapped</span>';
+    html+=`<tr>
+      <td>${row.name}</td>
+      <td style="text-align:right">${row.eod||'—'}</td>
+      <td style="text-align:right">${row.tcs||'—'}</td>
+      <td style="text-align:right;font-weight:600">${row.total}</td>
+      <td style="font-size:12px">${mapsTo}</td>
+    </tr>`;
+  }
+  html+='</tbody></table>';
+  el.innerHTML=html;
+}
+
+// ── WASTE MAPPINGS ────────────────────────────────────────
+function populateWasteProdSelect(){
+  const sel=document.getElementById('new-waste-prod');
+  if(!sel) return;
+  sel.innerHTML=cfg.prod_items.map(p=>`<option value="${p.name}">${p.name}</option>`).join('');
+}
+
+function addWasteMapping(){
+  const modifier=document.getElementById('new-waste-modifier').value.trim();
+  const prod=document.getElementById('new-waste-prod').value;
+  if(!modifier||!prod) return;
+  if(cfg.waste_mappings.find(m=>cleanName(m.modifier)===cleanName(modifier))){ alert('Already mapped.'); return; }
+  cfg.waste_mappings.push({modifier, prod});
+  saveWasteMappings();
+  document.getElementById('new-waste-modifier').value='';
+  renderWasteMappings();
+  renderWasteList();
+}
+
+function removeWasteMapping(i){
+  cfg.waste_mappings.splice(i,1);
+  saveWasteMappings();
+  renderWasteMappings();
+  renderWasteList();
+}
+
+function renderWasteMappings(){
+  const el=document.getElementById('waste-mappings-list');
+  if(!el) return;
+  if(!cfg.waste_mappings.length){
+    el.innerHTML='<p class="empty" style="text-align:left;padding:8px 0">No mappings yet.</p>';
+    return;
+  }
+  el.innerHTML=cfg.waste_mappings.map((m,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+      <span style="flex:1;font-size:13px">${m.modifier}</span>
+      <span style="color:var(--text3)">→</span>
+      <span style="flex:1;font-size:13px;font-weight:500">${m.prod}</span>
+      <button class="btn btnsm" onclick="removeWasteMapping(${i})">✕</button>
+    </div>`).join('');
+}
+
 function renderOosList(){
   const key=curOosDay+'|'+curOosLoc;
   const items=oosData[key]||[];
@@ -1068,6 +1270,48 @@ async function fetchOrders(locId,startISO,endISO){
     cursor=d.cursor||null;
   }while(cursor);
   return orders;
+}
+
+// ── WASTE TRACKING ────────────────────────────────────────
+// Fetches waste data for a single day across ALL locations in one call.
+// Waste is logged as a sale of "Bakery Waste EOD" or "Bakery Waste TCS" with
+// quantity-enabled modifiers representing each wasted product.
+// Returns { locId: { eod: {modifierName: qty}, tcs: {modifierName: qty} } }
+const WASTE_ITEM_NAMES = { eod: 'Bakery Waste EOD', tcs: 'Bakery Waste TCS' };
+
+async function fetchDayWaste(locIds, startISO, endISO) {
+  let orders=[], cursor=null;
+  do{
+    const body={location_ids:locIds, query:{filter:{date_time_filter:{created_at:{start_at:startISO,end_at:endISO}},state_filter:{states:['COMPLETED','OPEN']}}}};
+    if(cursor) body.cursor=cursor;
+    const r=await fetch(sqUrl('/v2/orders/search'),{method:'POST',headers:sqH(),body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.errors) throw new Error(d.errors[0].detail);
+    if(d.orders) orders=orders.concat(d.orders);
+    cursor=d.cursor||null;
+  } while(cursor);
+
+  const result={};
+  for(const loc of locIds) result[loc]={eod:{}, tcs:{}};
+
+  for(const o of orders){
+    if(!o.line_items) continue;
+    const locId=o.location_id;
+    if(!result[locId]) result[locId]={eod:{}, tcs:{}};
+    for(const li of o.line_items){
+      const liName=cleanName(li.name||'');
+      let bucket=null;
+      if(liName===cleanName(WASTE_ITEM_NAMES.eod)) bucket='eod';
+      else if(liName===cleanName(WASTE_ITEM_NAMES.tcs)) bucket='tcs';
+      if(!bucket) continue;
+      for(const mod of li.modifiers||[]){
+        const modName=mod.name||'?';
+        const qty=parseFloat(mod.quantity)||1;
+        result[locId][bucket][modName]=(result[locId][bucket][modName]||0)+qty;
+      }
+    }
+  }
+  return result;
 }
 
 function aggregateOrders(orders){
