@@ -119,12 +119,12 @@ input[type=range]{accent-color:var(--text)}
     </div>
   </header>
   <div class="tabs">
-    <button class="tab active" onclick="showTab('catalog',this)">Catalog</button>
-    <button class="tab" onclick="showTab('recipes',this)">Relationships</button>
-    <button class="tab" onclick="showTab('oos',this)">Out of stock</button>
+    <button class="tab active" onclick="showTab('generate',this)">Plan Pars</button>
+    <button class="tab" onclick="showTab('oos',this)">OOS</button>
     <button class="tab" onclick="showTab('waste',this)">Waste</button>
-    <button class="tab" onclick="showTab('generate',this)">Generate</button>
-    <button class="tab" onclick="showTab('verify',this)">Verify</button>
+    <button class="tab" onclick="showTab('verify',this)">Sales Data</button>
+    <button class="tab" onclick="showTab('catalog',this)">Catalog</button>
+    <button class="tab" onclick="showTab('recipes',this)">Relationships</button>
     <button class="tab" onclick="showTab('setup',this)">Setup</button>
   </div>
   <div class="content">
@@ -200,7 +200,7 @@ input[type=range]{accent-color:var(--text)}
     </div>
 
     <!-- CATALOG -->
-    <div id="tab-catalog" class="panel active">
+    <div id="tab-catalog" class="panel">
       <div class="card">
         <div class="card-title">Square catalog sync</div>
         <div class="hint">Sync pulls your live menu items from Square. Results are shared with your team automatically.</div>
@@ -289,8 +289,8 @@ input[type=range]{accent-color:var(--text)}
     <div id="tab-waste" class="panel">
       <div class="card">
         <div class="card-title">Bakery waste tracking <span class="badge binfo">from Square modifiers</span></div>
-        <div class="hint">Tracks "Bakery Waste EOD" and "Bakery Waste TCS" sales, broken down by modifier quantities. Pull data below, then browse by day/week/location.</div>
-        <button class="btn btnp" id="waste-fetch-btn" onclick="fetchWasteData()">Pull last 2 weeks of waste data</button>
+        <div class="hint">Tracks "Bakery Waste EOD" and "Bakery Waste TCS" sales, broken down by modifier quantities. Waste data is pulled automatically from the Plan Pars tab's "Pull last 2 weeks of data" button — use the button below only if you want to refresh waste data on its own.</div>
+        <button class="btn" id="waste-fetch-btn" onclick="fetchWasteData()">Re-fetch waste data only</button>
         <div id="waste-status" style="margin-top:10px"></div>
       </div>
 
@@ -323,7 +323,7 @@ input[type=range]{accent-color:var(--text)}
     </div>
 
     <!-- GENERATE -->
-    <div id="tab-generate" class="panel">
+    <div id="tab-generate" class="panel active">
 
       <!-- Step 1: Fetch -->
       <div class="card" id="gen-fetch-card">
@@ -334,7 +334,7 @@ input[type=range]{accent-color:var(--text)}
           <div class="fg"><label>Close time</label><input type="time" id="close-time" value="17:00" oninput="debounceSave()"/></div>
         </div>
         <div class="btn-row">
-          <button class="btn btnp" id="fetch-btn" onclick="fetchData()">Pull last 2 weeks of data</button>
+          <button class="btn btnp" id="fetch-btn" onclick="fetchData()">Pull last 2 weeks of data (sales, OOS &amp; waste)</button>
           <button class="btn" onclick="generate(true)">Debug item names</button>
           <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
         </div>
@@ -1921,6 +1921,13 @@ async function fetchData() {
   document.getElementById('proj-direction').value = '';
   document.getElementById('proj-summary').textContent = '';
   document.getElementById('proj-required-badge').style.display='';
+
+  // Also pull waste data as part of the same "Pull sales data" action
+  setStatus('gen-status','Sales &amp; OOS data fetched. Now fetching waste data…','info');
+  try{
+    await fetchWasteData();
+  } catch(e){ /* waste fetch failures shouldn't block the main flow */ }
+  setStatus('gen-status','All data fetched.'+oosNote,'ok');
 }
 
 function resetFetch(){
