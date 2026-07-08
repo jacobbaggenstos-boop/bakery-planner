@@ -126,6 +126,7 @@ input[type=range]{accent-color:var(--text)}
     <button class="tab" onclick="showTab('catalog',this)">Catalog</button>
     <button class="tab" onclick="showTab('recipes',this)">Relationships</button>
     <button class="tab" onclick="showTab('setup',this)">Setup</button>
+    <button class="tab" onclick="showTab('debug',this)">Debug</button>
   </div>
   <div class="content">
 
@@ -196,6 +197,41 @@ input[type=range]{accent-color:var(--text)}
         <div class="step"><div class="stepn">2</div><p>Create a new application → open it → click the <strong>Production</strong> tab → copy the <strong>Production Access Token</strong>. This is personal — paste it above but it won't be shared with teammates.</p></div>
         <div class="step"><div class="stepn">3</div><p>Location IDs: <strong>Square Dashboard → Account &amp; Settings → Locations</strong>. Each starts with <code>L</code>. These are shared.</p></div>
         <div class="step"><div class="stepn">4</div><p>For the proxy URL, see the Val Town setup from the original deployment. Paste the same URL here.</p></div>
+      </div>
+    </div>
+
+    <!-- DEBUG -->
+    <div id="tab-debug" class="panel">
+      <div class="card">
+        <div class="card-title">Debug tools <span class="badge bwarn">for troubleshooting only</span></div>
+        <div class="hint">These tools inspect raw API responses to help track down data issues. Not needed for normal use.</div>
+        <div class="btn-row">
+          <button class="btn" onclick="generate(true)">Debug item names</button>
+          <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px;min-width:200px"/>
+          <button class="btn" onclick="debugItemOos()">Debug this item's OOS history</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <input type="date" id="debug-report-date" style="font-size:13px"/>
+          <button class="btn" onclick="debugReportingApi()">Debug Reporting API for this date</button>
+          <span style="font-size:12px;color:var(--text3)">Shows raw API response before any processing</span>
+        </div>
+      </div>
+
+      <div id="debug-status"></div>
+      <div id="debug-wrap" style="display:none">
+        <div class="sec-label">Debug — exact Square item names (last Tuesday, Redmond)</div>
+        <div class="output" id="debug-area" style="max-height:260px"></div>
+      </div>
+      <div id="debug-oos-wrap" style="display:none">
+        <div class="sec-label">Debug — raw OOS inventory changes (last Tuesday, Redmond)</div>
+        <div class="output" id="debug-oos-area" style="max-height:400px"></div>
+      </div>
+      <div id="debug-report-wrap" style="display:none">
+        <div class="sec-label">Debug — Reporting API raw response</div>
+        <div class="output" id="debug-report-area" style="max-height:500px"></div>
       </div>
     </div>
 
@@ -335,33 +371,10 @@ input[type=range]{accent-color:var(--text)}
         </div>
         <div class="btn-row">
           <button class="btn btnp" id="fetch-btn" onclick="fetchData()">Pull last 2 weeks of data (sales, OOS &amp; waste)</button>
-          <button class="btn" onclick="generate(true)">Debug item names</button>
-          <button class="btn" onclick="debugOos()">Debug OOS raw response</button>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-          <input type="text" id="debug-item-name" placeholder="Item name to inspect (e.g. Brownie)" style="flex:1;font-size:13px;min-width:200px"/>
-          <button class="btn" onclick="debugItemOos()">Debug this item's OOS history</button>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
-          <input type="date" id="debug-report-date" style="font-size:13px"/>
-          <button class="btn" onclick="debugReportingApi()">Debug Reporting API for this date</button>
-          <span style="font-size:12px;color:var(--text3)">Shows raw API response before any processing</span>
         </div>
       </div>
 
       <div id="gen-status"></div>
-      <div id="debug-wrap" style="display:none">
-        <div class="sec-label">Debug — exact Square item names (last Tuesday, Redmond)</div>
-        <div class="output" id="debug-area" style="max-height:260px"></div>
-      </div>
-      <div id="debug-oos-wrap" style="display:none">
-        <div class="sec-label">Debug — raw OOS inventory changes (last Tuesday, Redmond)</div>
-        <div class="output" id="debug-oos-area" style="max-height:400px"></div>
-      </div>
-      <div id="debug-report-wrap" style="display:none">
-        <div class="sec-label">Debug — Reporting API raw response</div>
-        <div class="output" id="debug-report-area" style="max-height:500px"></div>
-      </div>
 
       <!-- Step 2: Review + adjust (shown after fetch) -->
       <div id="gen-review-wrap" style="display:none">
@@ -2232,10 +2245,10 @@ async function generate(debugMode=false){
   if(debugMode){
     // Debug: pull last Tuesday Redmond
     const tok=token();
-    if(!tok){setStatus('gen-status','Add your Square token.','err');return;}
+    if(!tok){setStatus('debug-status','Add your Square token.','err');return;}
     const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
-    if(!locRed){setStatus('gen-status','Add Redmond location ID.','err');return;}
-    setStatus('gen-status','<span class="spin"></span> Fetching debug data…','info');
+    if(!locRed){setStatus('debug-status','Add Redmond location ID.','err');return;}
+    setStatus('debug-status','<span class="spin"></span> Fetching debug data…','info');
     const tues=getLastNWeekdays(2,1)[0]; // last Tuesday
     const end=new Date(tues); end.setDate(end.getDate()+1);
     try{
@@ -2244,8 +2257,8 @@ async function generate(debugMode=false){
       const lines=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([n,q])=>`${q.toString().padStart(4)}  ${n}`);
       document.getElementById('debug-area').textContent=lines.length?'QTY   ITEM NAME\n'+'─'.repeat(60)+'\n'+lines.join('\n'):'No orders found.';
       document.getElementById('debug-wrap').style.display='block';
-      setStatus('gen-status','Debug complete.','ok');
-    }catch(e){setStatus('gen-status','Error: '+e.message,'err');}
+      setStatus('debug-status','Debug complete.','ok');
+    }catch(e){setStatus('debug-status','Error: '+e.message,'err');}
     return;
   }
 }
@@ -2253,11 +2266,11 @@ async function generate(debugMode=false){
 async function debugReportingApi(){
   const dateStr = document.getElementById('debug-report-date').value;
   if(!dateStr){ alert('Pick a date first.'); return; }
-  if(!token()){ setStatus('gen-status','Add your Square token.','err'); return; }
+  if(!token()){ setStatus('debug-status','Add your Square token.','err'); return; }
 
   const areaEl = document.getElementById('debug-report-area');
   const wrapEl = document.getElementById('debug-report-wrap');
-  setStatus('gen-status','<span class="spin"></span> Fetching Reporting API for '+dateStr+'…','info');
+  setStatus('debug-status','<span class="spin"></span> Fetching Reporting API for '+dateStr+'…','info');
 
   const query = {
     measures: ['ItemSales.items_sold_count'],
@@ -2323,17 +2336,17 @@ async function debugReportingApi(){
 
     areaEl.textContent = lines.join('\n');
     wrapEl.style.display = 'block';
-    setStatus('gen-status','Reporting API debug complete.','ok');
+    setStatus('debug-status','Reporting API debug complete.','ok');
   } catch(e){
-    setStatus('gen-status','Error: '+e.message,'err');
+    setStatus('debug-status','Error: '+e.message,'err');
   }
 }
 
 async function debugOos(){
   const tok=token();
-  if(!tok){setStatus('gen-status','Add your Square token.','err');return;}
+  if(!tok){setStatus('debug-status','Add your Square token.','err');return;}
   const locRed=document.getElementById('loc-red').value.trim()||cfg.loc_red;
-  if(!locRed){setStatus('gen-status','Add Redmond location ID.','err');return;}
+  if(!locRed){setStatus('debug-status','Add Redmond location ID.','err');return;}
 
   const areaEl=document.getElementById('debug-oos-area');
   const wrapEl=document.getElementById('debug-oos-wrap');
@@ -2345,7 +2358,7 @@ async function debugOos(){
     return;
   }
 
-  setStatus('gen-status','<span class="spin"></span> Fetching raw OOS data…','info');
+  setStatus('debug-status','<span class="spin"></span> Fetching raw OOS data…','info');
   const tues=getLastNWeekdays(2,1)[0];
   const dayStart=new Date(tues); dayStart.setHours(0,0,0,0);
   const dayEnd=new Date(tues); dayEnd.setHours(23,59,59,999);
@@ -2397,7 +2410,7 @@ async function debugOos(){
 async function debugItemOos(){
   const itemName = document.getElementById('debug-item-name').value.trim();
   if(!itemName){ alert('Enter an item name first.'); return; }
-  if(!token()){ setStatus('gen-status','Add your Square token.','err'); return; }
+  if(!token()){ setStatus('debug-status','Add your Square token.','err'); return; }
 
   const varId = cfg.catalog_variations[itemName];
   const areaEl = document.getElementById('debug-oos-area');
@@ -2414,7 +2427,7 @@ async function debugItemOos(){
     return debugItemOos();
   }
 
-  setStatus('gen-status',`<span class="spin"></span> Fetching all history for "${itemName}"…`,'info');
+  setStatus('debug-status',`<span class="spin"></span> Fetching all history for "${itemName}"…`,'info');
 
   const locMap = {
     Redmond: document.getElementById('loc-red').value.trim()||cfg.loc_red,
@@ -2469,7 +2482,7 @@ async function debugItemOos(){
 
   areaEl.textContent = lines.join('\n');
   wrapEl.style.display = 'block';
-  setStatus('gen-status','Item history loaded — check debug output below.','ok');
+  setStatus('debug-status','Item history loaded — check debug output below.','ok');
 }
 
 function copyOut(){
