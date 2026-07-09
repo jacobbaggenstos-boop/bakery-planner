@@ -281,6 +281,32 @@ input[type=range]{accent-color:var(--text)}
         </div>
       </div>
       <div class="card">
+        <div class="card-title">Bread substitutions <span class="badge binfo">from Square modifiers</span></div>
+        <div class="hint">When a customer swaps the bread on a sandwich/tartine (e.g. "Sub Baguette"), the substitution is subtracted from that menu item's default bread and added to the swapped-to bread. Set each menu item's default bread below, then map each swap modifier to the production item it swaps to.</div>
+
+        <div class="sec-label">Default bread per menu item</div>
+        <div id="bread-defaults-list"></div>
+        <div class="add-row">
+          <div class="fg" style="position:relative">
+            <label>Menu item (from Square catalog)</label>
+            <input type="text" id="bread-default-menu" placeholder="e.g. Breakfast Sandwich — Bacon" oninput="filterBreadDefaultSuggestions(this.value)" autocomplete="off" onblur="setTimeout(()=>hideBreadDefaultSuggestions(),150)"/>
+            <div id="bread-default-suggestions" style="display:none;position:absolute;width:100%;top:100%;left:0;z-index:50"></div>
+          </div>
+          <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px">defaults to</div>
+          <div class="fg"><label>Default bread</label><select id="bread-default-prod"><option value="">— select —</option></select></div>
+          <button class="btn btnp" style="align-self:flex-end" onclick="addBreadDefault()">+ Add</button>
+        </div>
+
+        <div class="sec-label" style="margin-top:16px">Swap modifier → production item</div>
+        <div id="bread-swaps-list"></div>
+        <div class="add-row">
+          <div class="fg"><label>Swap modifier name (exact, from Square)</label><input type="text" id="bread-swap-modifier" placeholder="e.g. Sub Baguette"/></div>
+          <div style="align-self:flex-end;color:var(--text2);font-size:13px;padding-bottom:9px">swaps to</div>
+          <div class="fg"><label>Production item</label><select id="bread-swap-prod"><option value="">— select —</option></select></div>
+          <button class="btn btnp" style="align-self:flex-end" onclick="addBreadSwap()">+ Add</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title">Kitchen buffer</div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-size:13px;color:var(--text2)">Kitchen items get a</span>
@@ -293,15 +319,11 @@ input[type=range]{accent-color:var(--text)}
     <!-- OOS -->
     <div id="tab-oos" class="panel">
       <div class="card">
-        <div class="card-title">Out-of-stock events <span class="badge binfo">auto-detected from Square</span></div>
-        <div class="hint">OOS times are pulled automatically from Square's inventory 86 events when you fetch data on the Generate tab. Items 86'd after their OOS cutoff time are shown but <em>not</em> adjusted — that's an acceptable sellout. Manual overrides below take priority over auto-detected times.</div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-          <label style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Week of (Tuesday)</label>
-          <input type="date" id="week-start" style="width:160px;font-size:13px" onchange="reloadOosWeek()"/>
-        </div>
+        <div class="card-title">Auto-detected OOS events <span class="badge binfo">from Square</span></div>
+        <div class="hint">Pulled automatically from Square's inventory 86 events when you fetch data on the Plan Pars tab. Items 86'd after their OOS cutoff time are shown but <em>not</em> adjusted — that's an acceptable sellout.</div>
         <div class="day-tabs" id="oos-days"></div>
         <div class="loc-tabs" id="oos-locs"></div>
-        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+        <div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
           <label style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">Sample week</label>
           <select id="oos-week-select" style="font-size:13px" onchange="switchOosWeekIdx(this.value)">
             <option value="0">Most recent</option>
@@ -309,13 +331,23 @@ input[type=range]{accent-color:var(--text)}
             <option value="2">3rd most recent</option>
           </select>
           <span id="oos-week-date-label" style="font-size:12px;color:var(--text3)"></span>
+          <span style="font-size:11px;color:var(--text3);margin-left:6px">← switch weeks if a day looks empty, some weeks had no OOS events for that day</span>
         </div>
         <div id="auto-oos-list"></div>
-        <div class="sec-label" style="margin-top:16px">Manual overrides</div>
-        <div class="hint" style="margin-bottom:8px">Use these only if auto-detection missed something or pulled the wrong time.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Manual overrides <span class="badge bwarn">optional</span></div>
+        <div class="hint" style="margin-bottom:8px">Only needed if auto-detection missed something or pulled the wrong time. Manual entries always take priority over auto-detected times for the matching day/item/location, applied to every sample week.</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <label style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Week of (Tuesday)</label>
+          <input type="date" id="week-start" style="width:160px;font-size:13px" onchange="reloadOosWeek()"/>
+          <span style="font-size:11px;color:var(--text3)">Manual entries are stored per real calendar week — pick the week you're logging for.</span>
+        </div>
         <div id="oos-list"></div>
         <button class="btn" style="margin-top:12px" onclick="addOosEntry()">+ Add manual override</button>
       </div>
+
       <div class="info-box">
         <strong style="color:var(--text)">How the missed-sales estimate works:</strong> When an item is 86'd before its OOS cutoff, the tool looks at that item's actual hourly sales curve and estimates what fraction of remaining sales were missed. That estimate is added to the raw sales count before averaging. Items 86'd after the cutoff are left unadjusted — you <em>want</em> to sell out by then.
       </div>
@@ -463,7 +495,7 @@ const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', loc_names:{}, open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{}, waste_mappings:[] };
+let cfg = { catalog:[], catalog_variations:{}, prod_items:[], rels:[], proxy_url:'', sq_token:'', loc_red:'', loc_bel:'', loc_wood:'', loc_names:{}, open_time:'08:00', close_time:'17:00', kitchen_buffer:5, item_multipliers:{}, waste_mappings:[], bread_defaults:[], bread_swaps:[] };
 // autoOosData: populated during fetchData, never persisted to Supabase
 // structure: { 'dayName|locKey': { itemName: 'HH:MM' } }
 let autoOosData = {};
@@ -476,6 +508,7 @@ let salesByDowGlobal = {}; // persisted copy of salesByDow for the Verify tab
 let salesByDowDates = {}; // dow -> [date strings] for display in Verify tab
 let wasteByDow = {}; // dow -> [ {locKey: {eod:{modName:qty}, tcs:{modName:qty}}} ] per week sample
 let wasteByDowDates = {}; // dow -> [date strings] for display in Waste tab
+let swapsByDow = {}; // dow -> [ {locKey: {'menuItem|modifier': qty}} ] per week sample — bread swaps
 let curWasteDay = 'Tuesday', curWasteLoc = 'Red', curWasteWeekIdx = 0;
 let oosData = {};
 let curOosDay = 'Tuesday', curOosLoc = 'Red', curOosWeekIdx = 0;
@@ -541,6 +574,8 @@ async function loadConfig(){
     cfg.kitchen_buffer = data.kitchen_buffer||5;
     cfg.item_multipliers = data.item_multipliers||{};
     cfg.waste_mappings = data.mappings||[]; // repurposing the unused 'mappings' column
+    cfg.bread_defaults = data.bread_defaults||[];
+    cfg.bread_swaps = data.bread_swaps||[];
   }
   // Load OOS for current week from Supabase
   const weekStart = getDefaultWeekStart();
@@ -575,6 +610,7 @@ function applyConfig(){
   document.getElementById('open-time').value = cfg.open_time;
   document.getElementById('close-time').value = cfg.close_time;
   renderProdItems(); renderRels(); renderCatalogGrid();
+  renderBreadDefaults(); renderBreadSwaps(); populateBreadProdSelects();
   renderOosDays(); renderOosLocs(); renderAutoOosList(); renderOosList();
   renderDayLocAdjs();
   renderWasteDays(); renderWasteLocs(); renderWasteMappings(); populateWasteProdSelect();
@@ -725,7 +761,7 @@ function addProdItem(){
   cfg.prod_items.push({name,sec,oos_cutoff});
   saveConfigField('prod_items',cfg.prod_items);
   document.getElementById('new-prod').value='';
-  renderProdItems(); updateRelProdSelect();
+  renderProdItems(); updateRelProdSelect(); populateBreadProdSelects();
 }
 
 function removeProdItem(i){
@@ -735,7 +771,7 @@ function removeProdItem(i){
   cfg.rels=cfg.rels.filter(r=>r.prod!==name);
   saveConfigField('prod_items',cfg.prod_items);
   saveConfigField('rels',cfg.rels);
-  renderProdItems(); renderRels(); updateRelProdSelect();
+  renderProdItems(); renderRels(); updateRelProdSelect(); populateBreadProdSelects();
 }
 
 function setProdCutoff(i, val){
@@ -841,6 +877,94 @@ function filterSuggestions(q){
 }
 function pickSug(val){ document.getElementById('rel-menu').value=val; document.getElementById('rel-suggestions').style.display='none'; }
 function hideSuggestions(){ document.getElementById('rel-suggestions').style.display='none'; }
+
+// ── BREAD SUBSTITUTIONS ───────────────────────────────────
+function filterBreadDefaultSuggestions(q){
+  const box=document.getElementById('bread-default-suggestions');
+  if(!q||q.length<2){box.style.display='none';return;}
+  const matches=cfg.catalog.filter(c=>c.toLowerCase().includes(q.toLowerCase())).slice(0,10);
+  if(!matches.length){box.style.display='none';return;}
+  box.style.display='block';
+  box.innerHTML=`<div class="suggest-box">${matches.map(m=>`<div class="suggest-item" onmousedown="pickBreadDefaultSug('${m.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">${m}</div>`).join('')}</div>`;
+}
+function pickBreadDefaultSug(val){ document.getElementById('bread-default-menu').value=val; document.getElementById('bread-default-suggestions').style.display='none'; }
+function hideBreadDefaultSuggestions(){ document.getElementById('bread-default-suggestions').style.display='none'; }
+
+function populateBreadProdSelects(){
+  const opts = '<option value="">— select —</option>' + cfg.prod_items.map(p=>`<option value="${p.name}">${p.name}</option>`).join('');
+  const defSel = document.getElementById('bread-default-prod');
+  const swapSel = document.getElementById('bread-swap-prod');
+  if(defSel) defSel.innerHTML = opts;
+  if(swapSel) swapSel.innerHTML = opts;
+}
+
+function addBreadDefault(){
+  const menu=document.getElementById('bread-default-menu').value.trim();
+  const prod=document.getElementById('bread-default-prod').value;
+  if(!menu||!prod){alert('Fill in both fields.');return;}
+  if(cfg.bread_defaults.find(b=>cleanName(b.menu)===cleanName(menu))){alert('Already set — remove it first to change.');return;}
+  cfg.bread_defaults.push({menu,prod});
+  saveConfigField('bread_defaults', cfg.bread_defaults);
+  document.getElementById('bread-default-menu').value='';
+  document.getElementById('bread-default-prod').value='';
+  document.getElementById('bread-default-suggestions').style.display='none';
+  renderBreadDefaults();
+}
+
+function removeBreadDefault(i){
+  cfg.bread_defaults.splice(i,1);
+  saveConfigField('bread_defaults', cfg.bread_defaults);
+  renderBreadDefaults();
+}
+
+function renderBreadDefaults(){
+  const el=document.getElementById('bread-defaults-list');
+  if(!el) return;
+  if(!cfg.bread_defaults.length){
+    el.innerHTML='<p class="empty" style="text-align:left;padding:8px 0">No defaults set yet.</p>';
+    return;
+  }
+  el.innerHTML=cfg.bread_defaults.map((b,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+      <span style="flex:1;font-size:13px">${b.menu}</span>
+      <span style="color:var(--text3)">defaults to</span>
+      <span style="flex:1;font-size:13px;font-weight:500">${b.prod}</span>
+      <button class="btn btnsm" onclick="removeBreadDefault(${i})">✕</button>
+    </div>`).join('');
+}
+
+function addBreadSwap(){
+  const modifier=document.getElementById('bread-swap-modifier').value.trim();
+  const prod=document.getElementById('bread-swap-prod').value;
+  if(!modifier||!prod){alert('Fill in both fields.');return;}
+  if(cfg.bread_swaps.find(s=>cleanName(s.modifier)===cleanName(modifier))){alert('Already mapped.');return;}
+  cfg.bread_swaps.push({modifier,prod});
+  saveConfigField('bread_swaps', cfg.bread_swaps);
+  document.getElementById('bread-swap-modifier').value='';
+  renderBreadSwaps();
+}
+
+function removeBreadSwap(i){
+  cfg.bread_swaps.splice(i,1);
+  saveConfigField('bread_swaps', cfg.bread_swaps);
+  renderBreadSwaps();
+}
+
+function renderBreadSwaps(){
+  const el=document.getElementById('bread-swaps-list');
+  if(!el) return;
+  if(!cfg.bread_swaps.length){
+    el.innerHTML='<p class="empty" style="text-align:left;padding:8px 0">No swap mappings yet.</p>';
+    return;
+  }
+  el.innerHTML=cfg.bread_swaps.map((s,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+      <span style="flex:1;font-size:13px">${s.modifier}</span>
+      <span style="color:var(--text3)">swaps to</span>
+      <span style="flex:1;font-size:13px;font-weight:500">${s.prod}</span>
+      <button class="btn btnsm" onclick="removeBreadSwap(${i})">✕</button>
+    </div>`).join('');
+}
 
 // ── RELATIONSHIPS ─────────────────────────────────────────
 function addRel(){
@@ -995,6 +1119,7 @@ async function fetchWasteData(){
 
   wasteByDow = {};
   wasteByDowDates = {};
+  swapsByDow = {};
 
   // Invert locMap: locId -> locKey
   const idToLocKey = {};
@@ -1002,6 +1127,7 @@ async function fetchWasteData(){
 
   for(let dow=0; dow<7; dow++){
     wasteByDow[dow] = [];
+    swapsByDow[dow] = [];
     const dowIndex = [2,3,4,5,6,0,1][dow];
     const weekDates = getLastNWeekdays(dowIndex, WEEKS_TO_TRY);
     wasteByDowDates[dow] = weekDates.map(d=>d.toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}));
@@ -1012,14 +1138,16 @@ async function fetchWasteData(){
       const startISO = pacificMidnightISO(date);
       const endISO = pacificMidnightISO(new Date(new Date(date).setDate(date.getDate()+1)));
       const weekWaste = {Red:{eod:{},tcs:{}}, Bel:{eod:{},tcs:{}}, Wood:{eod:{},tcs:{}}};
+      const weekSwaps = {Red:{}, Bel:{}, Wood:{}};
       try{
         const byLocId = await fetchDayWaste(validLocIds, startISO, endISO);
         for(const[locId, data] of Object.entries(byLocId)){
           const locKey = idToLocKey[locId];
-          if(locKey) weekWaste[locKey] = data;
+          if(locKey){ weekWaste[locKey] = data; weekSwaps[locKey] = data.swaps||{}; }
         }
       } catch(e){ /* leave empty on error */ }
       wasteByDow[dow].push(weekWaste);
+      swapsByDow[dow].push(weekSwaps);
     }
   }
 
@@ -1292,6 +1420,9 @@ async function fetchOrders(locId,startISO,endISO){
 // Returns { locId: { eod: {modifierName: qty}, tcs: {modifierName: qty} } }
 const WASTE_ITEM_NAMES = { eod: 'Bakery Waste EOD', tcs: 'Bakery Waste TCS' };
 
+// Fetches waste AND bread-swap data in a single Orders API pass (same orders,
+// two different things extracted) so we don't double the number of API calls.
+// Returns { locId: { eod:{}, tcs:{}, swaps:{'menuItem|modifierName': qty} } }
 async function fetchDayWaste(locIds, startISO, endISO) {
   let orders=[], cursor=null;
   do{
@@ -1305,22 +1436,37 @@ async function fetchDayWaste(locIds, startISO, endISO) {
   } while(cursor);
 
   const result={};
-  for(const loc of locIds) result[loc]={eod:{}, tcs:{}};
+  for(const loc of locIds) result[loc]={eod:{}, tcs:{}, swaps:{}};
+
+  // Build a quick lookup of swap modifier names (cleaned) for fast matching
+  const swapModifierNames = new Set(cfg.bread_swaps.map(s=>cleanName(s.modifier)));
 
   for(const o of orders){
     if(!o.line_items) continue;
     const locId=o.location_id;
-    if(!result[locId]) result[locId]={eod:{}, tcs:{}};
+    if(!result[locId]) result[locId]={eod:{}, tcs:{}, swaps:{}};
     for(const li of o.line_items){
       const liName=cleanName(li.name||'');
+      const liQty=parseFloat(li.quantity)||1;
+
+      // Waste tracking
       let bucket=null;
       if(liName===cleanName(WASTE_ITEM_NAMES.eod)) bucket='eod';
       else if(liName===cleanName(WASTE_ITEM_NAMES.tcs)) bucket='tcs';
-      if(!bucket) continue;
+      if(bucket){
+        for(const mod of li.modifiers||[]){
+          const modName=mod.name||'?';
+          const qty=parseFloat(mod.quantity)||1;
+          result[locId][bucket][modName]=(result[locId][bucket][modName]||0)+qty;
+        }
+        continue; // waste items don't also carry bread-swap modifiers
+      }
+
+      // Bread swap tracking — check every other line item's modifiers for a swap match
       for(const mod of li.modifiers||[]){
-        const modName=mod.name||'?';
-        const qty=parseFloat(mod.quantity)||1;
-        result[locId][bucket][modName]=(result[locId][bucket][modName]||0)+qty;
+        if(!swapModifierNames.has(cleanName(mod.name||''))) continue;
+        const key = (li.name||'?') + '|' + (mod.name||'?');
+        result[locId].swaps[key] = (result[locId].swaps[key]||0) + liQty;
       }
     }
   }
@@ -1859,6 +2005,36 @@ async function fetchData() {
               oosConfidence = result.confidence;
             }
           }
+
+          // ── Bread substitution adjustment ──────────────────
+          // If this production item is a "default bread" for any menu item(s), subtract
+          // the quantity swapped AWAY from it. If it's a "swap target" for any modifier(s),
+          // add the quantity swapped TO it. Both apply to qty and rawQty equally, since
+          // swaps are real observed sales behavior, not an estimate like OOS.
+          const daySwaps = swapsByDow?.[dow]?.[wIdx]?.[loc] || {};
+          let swapAdjustment = 0;
+          for(const[swapKey, swapQty] of Object.entries(daySwaps)){
+            const [menuItemName, modifierName] = swapKey.split('|');
+            // Does this swap SUBTRACT from pi (pi is the default bread for this menu item)?
+            const defaultEntry = cfg.bread_defaults.find(b => cleanName(b.menu)===cleanName(menuItemName) && b.prod===pi.name);
+            if(defaultEntry){
+              const relQty = cfg.rels.find(r=>cleanName(r.menu)===cleanName(menuItemName) && r.prod===pi.name)?.qty ?? 1;
+              swapAdjustment -= swapQty*relQty;
+            }
+            // Does this swap ADD to pi (pi is the swap-to target for this modifier)?
+            const swapEntry = cfg.bread_swaps.find(s => cleanName(s.modifier)===cleanName(modifierName) && s.prod===pi.name);
+            if(swapEntry){
+              // Use the same per-unit qty as the default bread's relationship, if known,
+              // so a half-baguette swap stays a half-baguette addition. Falls back to 1.
+              const defaultForThisMenu = cfg.bread_defaults.find(b=>cleanName(b.menu)===cleanName(menuItemName));
+              const relQty = defaultForThisMenu
+                ? (cfg.rels.find(r=>cleanName(r.menu)===cleanName(menuItemName) && r.prod===defaultForThisMenu.prod)?.qty ?? 1)
+                : 1;
+              swapAdjustment += swapQty*relQty;
+            }
+          }
+          qty += swapAdjustment;
+          rawQty += swapAdjustment; // swaps are real sales data, not an estimate — applies to raw baseline too
           // Detect if the location was closed this day (not just this item having
           // zero sales — a genuinely slow day for one item is real data and should
           // stay in the pool). We check TOTAL sales across all items at this location
